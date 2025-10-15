@@ -1,6 +1,24 @@
 // ============================================
 // السكريبت الرئيسي - app.js (نسخة مصححة)
 // ============================================
+// إصلاح مشكلة pdfmake vFS
+if (typeof pdfMake !== 'undefined') {
+    if (!pdfMake.vFS && pdfMake.vfs) {
+        pdfMake.vFS = pdfMake.vfs;
+    }
+    
+    // تهيئة الخطوط الافتراضية إذا لم تكن موجودة
+    if (!pdfMake.fonts) {
+        pdfMake.fonts = {
+            Roboto: {
+                normal: 'Roboto-Regular.ttf',
+                bold: 'Roboto-Medium.ttf',
+                italics: 'Roboto-Italic.ttf',
+                bolditalics: 'Roboto-MediumItalic.ttf'
+            }
+        };
+    }
+}
 
 let currentUser = null;
 
@@ -24,30 +42,6 @@ if (typeof ExcelJS === 'undefined') {
 }
 
 
-// ===== أوفرلاي تحميل الملف =====
-let __fileOverlayStart = 0;
-function showFileOverlay(msg = 'جاري تجهيز الملف...') {
-  const ov = document.getElementById('fileDownloadOverlay');
-  const m  = document.getElementById('fileOverlayMsg');
-  if (!ov || !m) { 
-    console.error('❌ fileDownloadOverlay غير موجود في DOM'); // سطر خطأ
-    return;
-  }
-  __fileOverlayStart = Date.now();
-  m.textContent = msg;
-  ov.classList.remove('hidden');
-}
-function updateFileOverlay(msg) {
-  const m = document.getElementById('fileOverlayMsg');
-  if (m) m.textContent = msg;
-}
-async function hideFileOverlay(minMs = 1200) {
-  const ov = document.getElementById('fileDownloadOverlay');
-  const diff = Date.now() - __fileOverlayStart;
-  const waitMore = Math.max(0, minMs - diff);
-  await new Promise(r => setTimeout(r, waitMore));
-  ov?.classList.add('hidden');
-}
 
 
 // ---- تسجيل الدخول ----
@@ -69,8 +63,10 @@ async function handleLogin(event) {
     const data = await res.json();
 
     if (data?.success) {
-      // ✅ التصحيح هنا
-      currentUser = { ...data.user, userType: normalizeUserType(data.user.userType) };
+      currentUser = { 
+        ...data.user, 
+        userType: normalizeUserType(data.user.userType) 
+      };
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       redirectToDashboard(currentUser.userType);
     } else {
@@ -83,6 +79,8 @@ async function handleLogin(event) {
     spinner?.classList.add('hidden');
   }
 }
+
+
 
 
 // ---- توجيه للوحة المناسبة (نسخة واحدة فقط) ----
@@ -233,29 +231,36 @@ function renderTraineeStats(stats) {
       <div class="stat-label">في انتظار الاعتماد</div>
     </div>`;
   document.getElementById('traineeStats').innerHTML = html;
+  upgradeIcons(document.getElementById('traineeStats'));
+
 }
 
+
 function renderAvailableWorkshops(workshops) {
-  const html = (workshops||[]).map(w => `
+  const html = (workshops || []).map(w => `
     <div class="workshop-card">
       <div class="workshop-header">
         <div class="workshop-title">${w.name}</div>
         <span class="workshop-badge badge-${w.status === 'متاح' ? 'available' : 'completed'}">${w.status}</span>
       </div>
+
       <div class="workshop-details">
         <div class="workshop-detail"><span>⏱️</span><span>${w.hours} ساعات</span></div>
         <div class="workshop-detail"><span>📅</span><span>${w.date}</span></div>
         <div class="workshop-detail"><span>📍</span><span>${w.location}</span></div>
         <div class="workshop-detail"><span>👥</span><span>${w.registered}/${w.capacity} مسجل</span></div>
       </div>
+
       <div class="workshop-actions">
         ${w.status === 'متاح'
           ? `<button class="btn btn-primary btn-small" onclick="registerWorkshop('${w.id}')">تسجيل حضور</button>`
-          : `<button class="btn btn-outline btn-small" disabled>مكتمل</button>`}
-        <button class="btn btn-outline btn-small" onclick="viewWorkshopDetails('${w.id}')">التفاصيل</button>
+          : `<button class="btn btn-outline btn-small" disabled>غير متاح</button>`}
+        <!-- ⚠️ مُزال: لا زر تفاصيل للمتدرب -->
       </div>
-    </div>`).join('');
+    </div>
+  `).join('');
   document.getElementById('availableWorkshops').innerHTML = html;
+  upgradeIcons(document.getElementById('availableWorkshops'));
 }
 
 function renderTraineeSkills(skills) {
@@ -270,7 +275,7 @@ function renderTraineeSkills(skills) {
             <td>${s.date}</td>
             <td><span class="workshop-badge badge-${s.status === 'معتمد' ? 'completed' : 'pending'}">${s.status}</span></td>
             <td>${s.status === 'معتمد'
-                ? `<button class="btn btn-accent btn-small" onclick="downloadCertificate('${s.id}')">تحميل</button>`
+                ? `<button class="btn btn-accent btn-small" onclick="downloadCertificatePDF('${s.id}')">تحميل</button>`
                 : `<button class="btn btn-outline btn-small" disabled>غير متاح</button>`}
             </td>
           </tr>`).join('')}
@@ -447,69 +452,376 @@ function renderTrainerStats(stats) {
       <div class="stat-label">في انتظار الاعتماد</div>
     </div>`;
   document.getElementById('trainerStats').innerHTML = html;
+  upgradeIcons(document.getElementById('trainerStats'));
+
 }
 
 function renderTrainerWorkshops(workshops) {
   const html = `
-    <table>
-      <thead><tr><th>اسم الورشة</th><th>التاريخ</th><th>المكان</th><th>المسجلين</th><th>الحالة</th><th>الإجراءات</th></tr></thead>
-      <tbody>
-        ${(workshops||[]).map(w => `
+    <div class="table-responsive">
+      <table>
+        <thead>
           <tr>
-            <td><strong>${w.name}</strong></td>
-            <td>${w.date}</td>
-            <td>${w.location}</td>
-            <td>${w.registered}/${w.capacity}</td>
-            <td><span class="workshop-badge badge-${(w.status === 'نشط' || w.status === 'متاح') ? 'available' : 'completed'}">${w.status}</span></td>
-            <td><button class="btn btn-primary btn-small" onclick="viewWorkshopDetails('${w.id}')">التفاصيل</button></td>
-          </tr>`).join('')}
-      </tbody>
-    </table>`;
+            <th>اسم الورشة</th>
+            <th>التاريخ</th>
+            <th>المكان</th>
+            <th>المسجلين</th>
+            <th>الحالة</th>
+            <th>الإجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(workshops||[]).map(w => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const wDate = parseDateFlexible_(w.date);
+            const isPast = wDate && wDate < today;
+            const statusBadge = isPast ? 'badge-error' : 
+                               (w.status === 'نشط' || w.status === 'متاح') ? 'badge-available' : 
+                               'badge-completed';
+            
+            return `
+              <tr>
+                <td>
+                  <strong>${w.name}</strong>
+                  ${isPast ? '<span style="color:var(--error);font-size:12px;margin-right:8px;">⏱️ منتهية</span>' : ''}
+                </td>
+                <td>${w.date}</td>
+                <td>${w.location}</td>
+                <td>
+                  <span style="font-weight:600;">
+                    ${w.registered}/${w.capacity}
+                  </span>
+                </td>
+                <td>
+                  <span class="workshop-badge ${statusBadge}">
+                    ${w.status}
+                  </span>
+                </td>
+                <td>
+                  <button class="btn btn-primary btn-small" 
+                          onclick="viewWorkshopDetails('${w.id}')">
+                    📋 التفاصيل
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
   document.getElementById('trainerWorkshops').innerHTML = html;
 }
 
+// ---- تحميل/جاهزية الخطوط للـ HTML2Canvas ----
+async function ensureArabicWebFontsReady() {
+  try {
+    if (document?.fonts?.ready) {
+      await document.fonts.ready; // ينتظر كل الويب فونتس
+    } else {
+      // متصفحات قديمة: مهلة بسيطة كـ fallback
+      await new Promise(r => setTimeout(r, 400));
+    }
+  } catch { /* تجاهل */ }
+}
+
+
+// ✅ عرض الورش النشطة مع متدربيها المعلقين فقط
 function renderPendingAttendance(attendance) {
-  const html = `
-    <table>
-      <thead>
-        <tr>
-          <th>اسم المتدرب</th>
-          <th>رقم التدريب</th>
-          <th>الورشة</th>
-          <th>وقت التسجيل</th>
-          <th>الحالة</th>
-          <th>الإجراء</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${((attendance || []).length ? (attendance || []).map(a => {
-          const badge = '<span class="workshop-badge badge-pending">معلق</span>';
-          return `
-            <tr>
-              <td><strong>${a.traineeName}</strong></td>
-              <td>${a.traineeId}</td>
-              <td>${a.workshopName}</td>
-              <td>${a.registrationTime}</td>
-              <td>${badge}</td>
-              <td>
-                <select class="input input-small" onchange="setAttendanceStatusUI('${a.id}', this)">
-                  <option value="pending" selected>معلق</option>
-                  <option value="approved">معتمد (حضور)</option>
-                  <option value="noshow">لم يحضر</option>
-                </select>
-              </td>
-            </tr>
-          `;
-        }).join('') : `
-          <tr>
-            <td colspan="6" style="text-align:center;color:var(--tvtc-text-muted);">
-              لا توجد سجلات معلّقة حاليًا.
-            </td>
-          </tr>
-        `)}
-      </tbody>
-    </table>`;
-  document.getElementById('pendingAttendance').innerHTML = html;
+  const container = document.getElementById('pendingAttendance');
+  if (!container) return;
+  
+  if (!attendance || !attendance.length) {
+    container.innerHTML = `
+      <div style="text-align:center; padding: 40px; color:var(--tvtc-text-muted);">
+        <div style="font-size: 48px; margin-bottom: 16px;">✅</div>
+        <h3 style="margin: 0 0 8px 0;">رائع! لا توجد سجلات معلقة</h3>
+        <p style="margin: 0;">تم اعتماد جميع الحضور</p>
+      </div>
+    `;
+    return;
+  }
+
+  // ✅ تجميع المتدربين حسب الورشة
+  const byWorkshop = {};
+  attendance.forEach(a => {
+    const wsName = a.workshopName || 'ورشة غير محددة';
+    if (!byWorkshop[wsName]) {
+      byWorkshop[wsName] = [];
+    }
+    byWorkshop[wsName].push(a);
+  });
+
+  // ✅ بناء HTML منظم
+  let html = '<div class="workshops-approval-container">';
+  
+  Object.keys(byWorkshop).forEach((workshopName, idx) => {
+    const trainees = byWorkshop[workshopName];
+    const workshopId = `workshop-${idx}`;
+    
+    html += `
+      <div class="workshop-approval-card">
+        <!-- Header -->
+        <div class="workshop-header">
+          <div>
+            <h3>📋 ${workshopName}</h3>
+            <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 14px;">
+              ${trainees.length} متدرب في انتظار الاعتماد
+            </p>
+          </div>
+        </div>
+        
+        <!-- شريط الأدوات -->
+        <div class="workshop-actions-header">
+          <label class="checkbox-label">
+            <input type="checkbox" 
+                   id="selectAll-${workshopId}"
+                   class="select-all-checkbox" 
+                   onchange="toggleAllInWorkshop('${workshopId}', this)">
+            <span>تحديد الكل (${trainees.length})</span>
+          </label>
+          
+          <div class="action-buttons">
+            <button class="btn btn-primary btn-small" 
+                    onclick="approveWorkshopAttendance('${workshopId}', 'approve')">
+              ✅ اعتماد الحضور
+            </button>
+            <button class="btn btn-outline btn-small" 
+                    onclick="approveWorkshopAttendance('${workshopId}', 'noshow')"
+                    style="border-color: var(--error); color: var(--error);">
+              ❌ لم يحضر
+            </button>
+          </div>
+        </div>
+
+        <!-- الجدول -->
+        <div class="table-wrapper">
+          <table class="trainees-table" id="${workshopId}">
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">تحديد</th>
+                <th>اسم المتدرب</th>
+                <th>رقم التدريب</th>
+                <th>وقت التسجيل</th>
+              </tr>
+            </thead>
+            <tbody>`;
+    
+    trainees.forEach(t => {
+      html += `
+        <tr class="trainee-row">
+          <td style="text-align: center;">
+            <input type="checkbox" 
+                   class="trainee-checkbox" 
+                   value="${t.id}"
+                   onchange="updateSelectAllState('${workshopId}')">
+          </td>
+          <td><strong>${t.traineeName}</strong></td>
+          <td>${t.traineeId}</td>
+          <td>${t.registrationTime}</td>
+        </tr>`;
+    });
+    
+    html += `
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- عداد المحدد -->
+        <div class="workshop-footer" id="footer-${workshopId}">
+          <span class="selected-count">لم يتم تحديد أي متدرب</span>
+        </div>
+      </div>`;
+  });
+  
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+
+// ✅ تحديث حالة checkbox "تحديد الكل" والعداد
+function updateSelectAllState(workshopId) {
+  const table = document.getElementById(workshopId);
+  const checkboxes = table.querySelectorAll('.trainee-checkbox');
+  const checkedBoxes = table.querySelectorAll('.trainee-checkbox:checked');
+  const selectAllCheckbox = document.getElementById(`selectAll-${workshopId}`);
+  const footer = document.getElementById(`footer-${workshopId}`);
+  
+  // تحديث checkbox الرئيسي
+  if (selectAllCheckbox) {
+    selectAllCheckbox.checked = checkedBoxes.length === checkboxes.length && checkboxes.length > 0;
+    selectAllCheckbox.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
+  }
+  
+  // تحديث العداد
+  if (footer) {
+    const count = checkedBoxes.length;
+    if (count === 0) {
+      footer.innerHTML = '<span class="selected-count">👆 حدد المتدربين الذين حضروا</span>';
+    } else {
+      footer.innerHTML = `
+        <span class="selected-count selected">
+          ✓ تم تحديد <strong>${count}</strong> من ${checkboxes.length} متدرب
+        </span>
+      `;
+    }
+  }
+}
+
+
+// ✅ النسخة الموحّدة لاعتماد حضور المتدربين في ورشة محددة
+async function approveWorkshopAttendance(workshopId, action) {
+  // تحقق من وجود الجدول
+  const table = document.getElementById(workshopId);
+  if (!table) {
+    alert('تعذر الوصول إلى قائمة المتدربين لهذه الورشة.');
+    return;
+  }
+
+  // اجمع المحددين
+  const checked = table.querySelectorAll('.trainee-checkbox:checked');
+  if (checked.length === 0) {
+    alert('⚠️ يرجى تحديد المتدربين الذين حضروا باستخدام ☑️');
+    return;
+  }
+
+  // نصوص التأكيد والأيقونة
+  const isApprove = action === 'approve';
+  const actionText = isApprove ? 'اعتماد حضور' : 'تعليم "لم يحضر" لـ';
+  const icon = isApprove ? '✅' : '❌';
+
+  const ok = window.confirm(`${icon} هل أنت متأكد من ${actionText} ${checked.length} متدرب؟`);
+  if (!ok) return;
+
+  // إظهار حالة الانشغال
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  showFileOverlay('⚡ جاري المعالجة...', `معالجة ${checked.length} سجل`);
+
+  try {
+    let successCount = 0;
+    const statusValue = isApprove ? 'approved' : 'noshow';
+
+    // طبّق الحالة لكل عنصر محدد
+    for (const cb of checked) {
+      const attendanceId = cb.value;
+      const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'setAttendanceStatus',
+          attendanceId,
+          trainerId: currentUser.id,
+          status: statusValue
+        })
+      });
+      const data = await res.json();
+      if (data?.success) successCount++;
+    }
+
+    // حدّث الـ overlay برسالة نجاح
+    updateFileOverlay('✅ تمت المعالجة بنجاح', `تم ${actionText} ${successCount} سجل`);
+
+    // إعادة تحميل بيانات المدرب وتحديث الواجهة
+    setTimeout(async () => {
+      hideFileOverlay(0);
+      await loadTrainerData();
+      alert(`✅ تم ${actionText} ${successCount} من ${checked.length} سجل بنجاح!`);
+    }, 1500);
+  } catch (err) {
+    console.error('خطأ في الاعتماد:', err);
+    updateFileOverlay('❌ فشلت العملية', err.message || 'تعذر إكمال العملية', true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+  } finally {
+    spinner?.classList.add('hidden');
+  }
+}
+
+
+
+// ✅ تحديد/إلغاء تحديد الكل
+function toggleAllInWorkshop(workshopId, checkbox) {
+  const table = document.getElementById(workshopId);
+  const checkboxes = table.querySelectorAll('.trainee-checkbox');
+  checkboxes.forEach(cb => cb.checked = checkbox.checked);
+  updateSelectAllState(workshopId);
+}
+
+
+
+function toggleWorkshopAttendance(workshopId, checked) {
+  const table = document.getElementById(workshopId);
+  const checkboxes = table.querySelectorAll('.trainee-checkbox');
+  checkboxes.forEach(cb => cb.checked = checked);
+  
+  // تحديث checkbox الرئيسي
+  const mainCheckbox = table.querySelector('.workshop-select-all');
+  if (mainCheckbox) mainCheckbox.checked = checked;
+}
+
+
+// دوال مساعدة للـ checkboxes
+function toggleAllAttendance(checkbox) {
+  const checkboxes = document.querySelectorAll('.attendance-checkbox');
+  checkboxes.forEach(cb => cb.checked = checkbox.checked);
+}
+
+async function bulkApproveSelected(action) {
+  const checkboxes = document.querySelectorAll('.attendance-checkbox:checked');
+  
+  if (checkboxes.length === 0) {
+    alert('⚠️ يرجى تحديد سجل واحد على الأقل');
+    return;
+  }
+  
+  const actionText = action === 'approve' ? 'اعتماد' : 'تعليم كـ "لم يحضر" لـ';
+  const confirm = window.confirm(
+    `هل أنت متأكد من ${actionText} ${checkboxes.length} سجل محدد؟`
+  );
+  
+  if (!confirm) return;
+  
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  
+  try {
+    showFileOverlay('⚡ جاري المعالجة...', `معالجة ${checkboxes.length} سجل`);
+    
+    let successCount = 0;
+    const statusValue = action === 'approve' ? 'approved' : 'noshow';
+    
+    for (const checkbox of checkboxes) {
+      const attendanceId = checkbox.value;
+      
+      const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'setAttendanceStatus',
+          attendanceId,
+          trainerId: currentUser.id,
+          status: statusValue
+        })
+      });
+      
+      const data = await res.json();
+      if (data?.success) successCount++;
+    }
+    
+    updateFileOverlay('✅ تمت المعالجة', `تم ${actionText} ${successCount} سجل بنجاح`);
+    
+    setTimeout(async () => {
+      hideFileOverlay(0);
+      await loadTrainerData();
+      alert(`✅ تم ${actionText} ${successCount} من ${checkboxes.length} سجل بنجاح!`);
+    }, 2000);
+    
+  } catch (err) {
+    console.error('خطأ في الاعتماد:', err);
+    updateFileOverlay('❌ فشلت العملية', err.message, true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+  } finally {
+    spinner?.classList.add('hidden');
+  }
 }
 
 
@@ -584,6 +896,54 @@ async function setAttendanceStatusUI(attendanceId, selectEl) {
   }
 }
 
+// ================================
+// أيقونات احترافية: ترقية تلقائية من الإيموجي إلى SVG
+// ================================
+function upgradeIcons(root=document){
+  // خريطة تحويل الإيموجي -> id الرمز في الـ sprite
+  const map = {
+    '⏱️':'i-clock',
+    '📅':'i-calendar',
+    '📍':'i-map',
+    '👥':'i-users',
+    '🏆':'i-trophy',
+    '📚':'i-trophy' // بديل جميل للعنوان
+  };
+
+  // استبدال كل span أول داخل .workshop-detail (الذي يحوي الإيموجي)
+  root.querySelectorAll('.workshop-detail span:first-child').forEach(el=>{
+    const t = (el.textContent||'').trim();
+    const id = map[t];
+    if (!id) return;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.classList.add('i');
+    const use = document.createElementNS('http://www.w3.org/2000/svg','use');
+    use.setAttributeNS('http://www.w3.org/1999/xlink','href','#'+id);
+    svg.appendChild(use);
+    // لف الأيقونة مع النص الحالي المجاور (إن وُجد)
+    el.replaceWith(svg);
+  });
+
+  // ترقية أي رموز في عناوين الأقسام/الإحصاءات
+  root.querySelectorAll('.section-title, .stat-icon').forEach(el=>{
+    const txt = (el.textContent||'').trim();
+    const key = Object.keys(map).find(k=>txt.startsWith(k));
+    if (!key) return;
+    // إبقِ النص بعد مسح الإيموجي الأولى
+    el.textContent = txt.replace(key,'').trim();
+    // أضف SVG قبل النص
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.classList.add('i');
+    const use = document.createElementNS('http://www.w3.org/2000/svg','use');
+    use.setAttributeNS('http://www.w3.org/1999/xlink','href','#'+map[key]);
+    svg.appendChild(use);
+    const wrap = document.createElement('span');
+    wrap.className = 'with-icon';
+    wrap.appendChild(svg);
+    wrap.append(' ' + el.textContent);
+    el.replaceWith(wrap);
+  });
+}
 
 // ---- لوحات رئيس القسم / الإدارة ----
 async function showHeadDashboard() {
@@ -598,6 +958,7 @@ async function showAdminDashboard() {
   await loadAdminData();
 }
 
+// في دالة loadHeadData، أضف:
 async function loadHeadData() {
   const spinner = document.getElementById('loadingSpinner');
   spinner?.classList.remove('hidden');
@@ -609,6 +970,9 @@ async function loadHeadData() {
       renderHeadStats(data.stats);
       renderDepartmentReports(data.reports);
       renderTopTrainees(data.topTrainees);
+      
+      // جلب الشهادات المعلقة
+      await loadPendingExternalCertsForHead();
     }
   } catch (e) {
     console.error('خطأ في جلب البيانات:', e);
@@ -616,6 +980,86 @@ async function loadHeadData() {
     spinner?.classList.add('hidden');
   }
 }
+
+async function loadPendingExternalCertsForHead() {
+  try {
+    const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=listExternalCertificates&department=${encodeURIComponent(currentUser.department)}&status=بانتظار الاعتماد`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (data?.success) {
+      renderPendingExternalCerts(data.certificates || []);
+    }
+  } catch (e) {
+    console.error('خطأ في جلب الشهادات المعلقة:', e);
+  }
+}
+
+function renderPendingExternalCerts(certs) {
+  const container = document.getElementById('pendingExternalCerts');
+  if (!container) return;
+  
+  if (!certs.length) {
+    container.innerHTML = '<p style="text-align:center;color:var(--tvtc-text-muted);">لا توجد شهادات بانتظار الاعتماد.</p>';
+    return;
+  }
+  
+  const rows = certs.map(c => `
+    <tr>
+      <td><strong>${c.traineeName}</strong></td>
+      <td>${c.courseName}</td>
+      <td>${c.hours} ساعة</td>
+      <td>
+        ${c.fileUrl ? `<a href="${c.fileUrl}" target="_blank" class="btn btn-outline btn-small">📎 عرض</a>` : '-'}
+      </td>
+      <td>
+        <button class="btn btn-primary btn-small" onclick="approveExternalCert('${c.id}', true)">✅ اعتماد</button>
+        <button class="btn btn-outline btn-small" onclick="approveExternalCert('${c.id}', false)" style="margin-right:5px;">❌ رفض</button>
+      </td>
+    </tr>
+  `).join('');
+  
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>المتدرب</th><th>اسم الدورة</th><th>الساعات</th><th>الملف</th><th>الإجراء</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function approveExternalCert(certId, approve) {
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  
+  try {
+    const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'approveExternalCertificate',
+        certId,
+        approverId: currentUser.id,
+        approve
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data?.success) {
+      alert(approve ? '✅ تم اعتماد الشهادة وإضافتها للمهارات' : '❌ تم رفض الشهادة');
+      await loadHeadData(); // إعادة تحميل
+    } else {
+      alert('خطأ: ' + (data?.message || 'فشل العملية'));
+    }
+  } catch (e) {
+    console.error('خطأ في اعتماد الشهادة:', e);
+    alert('حدث خطأ في العملية');
+  } finally {
+    spinner?.classList.add('hidden');
+  }
+}
+
 
 function renderHeadStats(stats) {
   const html = `
@@ -874,107 +1318,890 @@ async function fetchUsersDirectory() {
 // تصدير سجل المهارات من قالب محلي باستخدام ExcelJS
 // يعتمد على CONFIG.EXPORT في config.js
 // ============================================
+// ============================================
+// تصدير سجل المهارات المحسّن مع مزامنة آمنة
+// ============================================
+
 async function exportTraineeExcel() {
   try {
     if (!currentUser || !currentUser.id) {
-      showError('يجب تسجيل الدخول أولًا');
+      showError('يجب تسجيل الدخول أولاً');
       return;
     }
 
-    showFileOverlay('🔄 تهيئة البيانات من الخادم...'); // سطر تصحيح: بدء التحميل المرئي
+    showFileOverlay('📋 جاري الاتصال بالخادم...', 'نحضّر بياناتك من السحابة');
 
-    // 1) اطلب بيانات التصدير من GAS
     const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=exportTraineeXlsx&userId=${encodeURIComponent(currentUser.id)}`;
     const res = await fetch(url);
-    const j = await res.json();
-    if (!j.success) {
-      console.error('❌ exportTraineeExcel: GAS error:', j.message); // سطر خطأ
-      showError(j.message || 'تعذر تجهيز بيانات التصدير');
-      await hideFileOverlay(); // سطر تصحيح
+    
+    if (!res.ok) {
+      throw new Error(`فشل الاتصال بالخادم: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    
+    if (!data.success) {
+      throw new Error(data.message || 'تعذر جلب البيانات من الخادم');
+    }
+
+    if (!data.skills || data.skills.length === 0) {
+      updateFileOverlay('⚠️ تنبيه', 'لا توجد مهارات معتمدة للتصدير', true);
+      setTimeout(() => hideFileOverlay(0), 3000);
       return;
     }
 
-    const td = j.traineeData || {};
-    const skillsArr = j.skills || [];
+    updateFileOverlay('✅ تم استلام البيانات', 'جاري تحميل القالب...');
 
-    // 2) حمّل القالب
-    updateFileOverlay('⬇️ تحميل القالب المحلي...'); // سطر تصحيح
-    const tplRes = await fetch(CONFIG.EXPORT.TEMPLATE_URL, { cache: 'no-cache' });
+    const tplUrl = resolveTemplateUrl();
+    if (!tplUrl) {
+      throw new Error('تعذر تحديد مسار قالب Excel');
+    }
+
+    const tplRes = await fetch(tplUrl, { cache: 'no-cache' });
     if (!tplRes.ok) {
-      console.error('❌ exportTraineeExcel: template fetch failed:', tplRes.status, tplRes.statusText); // سطر خطأ
-      showError('تعذر تحميل قالب Excel المحلي');
-      await hideFileOverlay(); // سطر تصحيح
-      return;
+      throw new Error(`فشل تحميل القالب: ${tplRes.status}`);
     }
-    const tplBuf = await tplRes.arrayBuffer();
 
-    // 3) افتح القالب واكتب البيانات
-    updateFileOverlay('📝 كتابة البيانات داخل القالب...'); // سطر تصحيح
+    const tplBuf = await tplRes.arrayBuffer();
+    updateFileOverlay('📊 جاري معالجة البيانات...', 'كتابة المهارات والتوقيعات');
+
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(tplBuf);
+
     const ws = wb.getWorksheet(CONFIG.EXPORT.SHEET_NAME);
     if (!ws) {
-      console.error('❌ exportTraineeExcel: sheet not found:', CONFIG.EXPORT.SHEET_NAME); // سطر خطأ
-      showError('ورقة القالب غير موجودة داخل الملف');
-      await hideFileOverlay(); // سطر تصحيح
-      return;
+      throw new Error('ورقة القالب غير موجودة داخل الملف');
     }
 
-    // رؤوس المتدرب
-    ws.getCell(CONFIG.EXPORT.NAME_CELL).value  = td.name      || '';
-    ws.getCell(CONFIG.EXPORT.ID_CELL).value    = td.studentId || '';
-    ws.getCell(CONFIG.EXPORT.MAJOR_CELL).value = td.major     || '';
-    ws.getCell(CONFIG.EXPORT.SEM_CELL).value   = td.semester  || '';
-    ws.getCell(CONFIG.EXPORT.YEAR_CELL).value  = td.year      || '';
+      // 🔒 قفل جميع الخلايا (افتراضياً)
+      ws.eachRow(row => {
+        row.eachCell(cell => {
+          cell.protection = { locked: true };
+        });
+      });
 
-    // التواقيع
-    // جهّز القسم لو جاء باسم مختلف
-    td.major = td.major || td.department || td.dept || currentUser?.department || '';
-    // التواقيع (هجينة: GAS getOfficials → getUsers → Excel محلي)
-    await resolveSignaturesOnline(td);
-    ws.getCell(CONFIG.EXPORT.HOD_CELL)      .value = td.headOfDepartment || '';
-    ws.getCell(CONFIG.EXPORT.DEAN_STD_CELL) .value = td.deanOfStudents   || '';
-    ws.getCell(CONFIG.EXPORT.DEAN_CELL)     .value = td.dean             || '';
+      // ✅ فعّل الحماية (انتبه: Promise)
+      await ws.protect('TVTC2025', {
+        selectLockedCells: true,
+        selectUnlockedCells: true,
+        formatCells: false,
+        formatColumns: false,
+        formatRows: false,
+        insertRows: false,
+        insertColumns: false,
+        deleteRows: false,
+        deleteColumns: false,
+        sort: false,
+        autoFilter: false,
+        pivotTables: false
+      });
 
 
-    // المهارات
-    const MAP = CONFIG.EXPORT.SKILLS_MAP || {};
-    let total = 0;
-    for (const { name, hours } of skillsArr) {
-      const cellAddr = MAP[name];
-      if (!cellAddr) continue;
-      ws.getCell(cellAddr).value = Number(hours) || 0;
-      const rowNum = Number(cellAddr.replace(/[A-Z]/gi,'')); // اسم المهارة في العمود B (اختياري)
-      if (!isNaN(rowNum)) {
-        const nameCell = 'B' + rowNum;
-        if (!ws.getCell(nameCell).value) ws.getCell(nameCell).value = name;
+    const traineeData = data.traineeData || {};
+    const skillsArr = data.skills || [];
+
+    // كتابة معلومات المتدرب
+    ws.getCell(CONFIG.EXPORT.NAME_CELL).value  = traineeData.name || '';
+    ws.getCell(CONFIG.EXPORT.ID_CELL).value    = traineeData.studentId || '';
+    ws.getCell(CONFIG.EXPORT.MAJOR_CELL).value = traineeData.major || traineeData.department || '';
+    ws.getCell(CONFIG.EXPORT.SEM_CELL).value   = traineeData.semester || '';
+    ws.getCell(CONFIG.EXPORT.YEAR_CELL).value  = traineeData.year || '';
+
+    // معالجة التوقيعات
+    traineeData.department = traineeData.major || traineeData.department || currentUser?.department || '';
+    updateFileOverlay('🔐 جاري التحقق من التوقيعات...', 'نبحث عن المسؤولين');
+    
+    await resolveSignaturesOnlineStrict(traineeData);
+
+    ws.getCell(CONFIG.EXPORT.HOD_CELL).value      = traineeData.headOfDepartment || 'رئيس القسم';
+    ws.getCell(CONFIG.EXPORT.DEAN_STD_CELL).value = traineeData.deanOfStudents || 'وكيل شؤون المتدربين';
+    ws.getCell(CONFIG.EXPORT.DEAN_CELL).value     = traineeData.dean || 'العميد';
+
+    // ✅ كتابة المهارات متتالية بدون فراغات
+    updateFileOverlay('📝 جاري كتابة المهارات...', `معالجة ${skillsArr.length} مهارة معتمدة`);
+    
+    let totalHours = 0;
+    const startRow = 9; // بداية كتابة المهارات
+    
+    skillsArr.forEach((skill, index) => {
+      const currentRow = startRow + index;
+      const hours = Number(skill.hours || 0);
+      
+      if (hours > 0) {
+        // كتابة اسم المهارة في B
+        ws.getCell(`B${currentRow}`).value = skill.name;
+        
+        // كتابة الساعات في F
+        ws.getCell(`F${currentRow}`).value = hours;
+        
+        totalHours += hours;
+        
+        console.log(`  ✓ الصف ${currentRow}: ${skill.name} - ${hours} ساعة`);
       }
-      total += Number(hours) || 0;
-    }
-    ws.getCell(CONFIG.EXPORT.TOTAL_HOURS_CELL).value = total;
+    });
 
-    // 4) التحضير للتنزيل
-    updateFileOverlay('📦 تجهيز الملف للتنزيل...'); // سطر تصحيح
-    const safeId = (td.studentId || currentUser.id || '').toString().trim();
-    const outName = `سجل_المهارات_${safeId}.xlsx`;
+    // كتابة الإجمالي في الصف التالي
+    // ✅ كتابة المجموع في الخلية الثابتة F30
+    ws.getCell(CONFIG.EXPORT.TOTAL_HOURS_CELL || 'F30').value = totalHours;
+    
+    console.log(`📊 إجمالي الساعات: ${totalHours}`);
+
+    updateFileOverlay('📦 جاري تحضير الملف للتنزيل...', 'لحظات وسيبدأ التحميل');
+    
     const outBuf = await wb.xlsx.writeBuffer();
+    const safeId = String(traineeData.studentId || currentUser.id || '').replace(/[^\w]/g, '');
+    const fileName = `سجل_المهارات_${safeId}_${Date.now()}.xlsx`;
 
-    // تنزيل
-    const blob = new Blob([outBuf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([outBuf], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = outName;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
-    a.remove();
+    
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 100);
 
-    updateFileOverlay('✅ تم إنشاء الملف.. يبدأ التنزيل الآن'); // سطر تصحيح
+    updateFileOverlay('✅ تم إنشاء الملف بنجاح!', 'يبدأ التنزيل الآن...');
+
   } catch (err) {
-    console.error('❌ exportTraineeExcel crashed:', err); // سطر خطأ
-    showError('حدث خطأ أثناء إنشاء ملف Excel');
+    console.error('❌ فشل التصدير:', err);
+    updateFileOverlay('⚠️ حدث خطأ', err.message || 'فشل إنشاء ملف Excel', true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+    return;
+  }
+
+  await hideFileOverlay(2000);
+}
+
+if (typeof DriveApp !== 'undefined') {
+// رفع ملف إلى Google Drive
+function saveFileToDrive_(fileName, mimeType, base64Content) {
+  try {
+    const folder = getDriveFolder_();
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Content), mimeType, fileName);
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file.getUrl();
+  } catch (e) {
+    console.error('خطأ في حفظ الملف:', e);
+    return '';
+  }
+}
+
+function getDriveFolder_() {
+  const folderName = 'الشهادات_الخارجية';
+  const folders = DriveApp.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(folderName);
+}
+
+// تحديث submitExternalCertificate لحفظ الملف
+function submitExternalCertificate(userId, courseName, hours, fileName, mimeType, fileContent) {
+  const usersSheet = getSheet_(SHEETS.USERS);
+  if (!usersSheet) return jsonResponse(false, 'ورقة المستخدمين غير موجودة');
+
+  const values = usersSheet.getDataRange().getValues();
+  let traineeName = '', dept = '';
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][COL.USERS.ID]) === String(userId)) {
+      traineeName = String(values[i][COL.USERS.NAME]||'').trim();
+      dept = String(values[i][COL.USERS.DEPT]||'').trim();
+      break;
+    }
+  }
+  if (!traineeName) return jsonResponse(false, 'المتدرب غير موجود');
+
+  // حفظ الملف في Drive
+  const fileUrl = saveFileToDrive_(fileName, mimeType, fileContent);
+  
+  const h = ensureExternalCertsSheet_();
+  const lock = LockService.getScriptLock();
+  lock.tryLock(5000);
+  try {
+    const id = nextId_('CERT');
+    h.appendRow([
+      id, userId, traineeName, dept,
+      String(courseName||'').trim(),
+      toNumber_(hours),
+      fileUrl,
+      CERT_STATUS.PENDING, '', ''
+    ]);
+    return jsonResponse(true, 'تم رفع الشهادة وبانتظار اعتماد رئيس القسم', { certId: id });
   } finally {
-    await hideFileOverlay(1200); // سطر تصحيح: إبقاء الأوفرلاي ظاهر ≥ 1.2 ثانية
+    lock.releaseLock();
+  }
+}
+}
+// ============================================
+// دوال مساعدة محسّنة للـ Overlay
+// ============================================
+
+async function hideFileOverlay(delayMs = 1500) {
+  if (delayMs > 0) {
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  const ov = document.getElementById('fileDownloadOverlay');
+  if (ov) ov.classList.add('hidden');
+}
+
+function updateFileOverlay(title, subtitle, isError = false) {
+  const ov = document.getElementById('fileDownloadOverlay');
+  const titleEl = document.getElementById('fileOverlayTitle');
+  const msgEl = document.getElementById('fileOverlayMsg');
+  
+  if (!ov || !titleEl || !msgEl) return;
+  
+  titleEl.textContent = title;
+  msgEl.textContent = subtitle;
+  
+  if (isError) {
+    ov.classList.add('error-state');
+  } else {
+    ov.classList.remove('error-state');
+  }
+}
+
+let __fileOverlayStart = 0;
+
+function showFileOverlay(title = 'جاري التحضير...', subtitle = '') {
+  const ov = document.getElementById('fileDownloadOverlay');
+  const titleEl = document.getElementById('fileOverlayTitle');
+  const msgEl = document.getElementById('fileOverlayMsg');
+  
+  if (!ov || !titleEl || !msgEl) {
+    console.error('❌ عناصر الـ overlay غير موجودة');
+    return;
+  }
+
+  __fileOverlayStart = Date.now();
+  titleEl.textContent = title;
+  msgEl.textContent = subtitle;
+  
+  // إزالة حالة الخطأ
+  ov.classList.remove('error-state');
+  ov.classList.remove('hidden');
+}
+
+// ✅ تصدير PDF محسّن باستخدام html2canvas + jsPDF
+async function exportTraineePDF() {
+  if (!currentUser || !currentUser.id) {
+    showError('يجب تسجيل الدخول أولاً');
+    return;
+  }
+
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+
+  try {
+    showFileOverlay('📄 جاري إنشاء ملف PDF...', 'قد يستغرق بضع ثوانٍ');
+
+    // 1) جلب بيانات المتدرب والمهارات
+    const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=exportTraineeXlsx&userId=${encodeURIComponent(currentUser.id)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`فشل الاتصال بالخادم: ${res.status}`);
+    const data = await res.json();
+    if (!data.success || !Array.isArray(data.skills) || data.skills.length === 0) {
+      throw new Error('لا توجد مهارات معتمدة للتصدير');
+    }
+
+    updateFileOverlay('✅ تم استلام البيانات', 'تجهيز القالب...');
+
+    // 2) تجهيز بيانات التواقيع
+    const traineeData = data.traineeData || {};
+    const skills = data.skills || [];
+    await resolveSignaturesOnlineStrict(traineeData);
+
+    // 3) بناء الـ HTML الخاص بالطباعة
+    const htmlContent = createPDFHTML(traineeData, skills);
+
+    // 4) حقنه في حاوية مخفية
+    const pdfContainer = document.getElementById('pdfExportContainer') || createPDFContainer();
+    pdfContainer.innerHTML = htmlContent;
+
+    // 5) انتظار تحميل الخطوط
+    await ensureArabicWebFontsReady();
+
+    // 6) تحويل HTML إلى صورة
+    const canvas = await html2canvas(pdfContainer, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+
+    // 7) إنشاء jsPDF + إضافة خط Tajawal على كائن المستند (✅ التصحيح هنا)
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    const tajawalFontBase64 = `
+AAEAAAASAQAABAAgR0RFRrRCsIIAAAHgAAAAHEdQT1OyLWdKAAAB4AAAAExHU1VCZ0/fOwAAAfgAAABaT1MvMj4UQ70AAAGYAAAAYGNtYXAViBDZAAABxAAAADZnbHlmz2cGRQAAAeQAAABqaGVhZAHsHgUAAAIQAAAANmhoZWEE0gKgAAACNAAAACRobXR4AAgAAgAAAkgAAAAIbG9jYQAOACgAAAJUAAAACG1heHAAEAAUAAACbAAAABG5hbWUUYGVHAAACgAAAAlRwb3N0PqaBAwAAArQAAABrcHJlcAHrZ3wAAAMMAAAAEQAAACAAAwAAAAQAAUAAAgADAAEAAAAAAAIAAAAAAAEAAQAAAwAAAAAAAQAAAAEAAAAAAAUAAQAAAAAAAgAHADQABAAJAB4AAwABAAAAFAAfACkAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAACAAIAAgAAHgABAAAAAAACAAQAAAABAAEAAwACAAQAAAABAAEAAAAAAAAABAAAAAAABAAAAAAADAAAAAwAAAAMAAAADAAAAAwAAAAAAAQAAAAMAAAAAAAAAAQAAAAMAAAAAAAAAAAAAAAAAAAAAAA==
+    `.trim();
+
+    // ✅ الصحيح: على الكائن doc، وليس jsPDF.API
+    doc.addFileToVFS('Tajawal-Regular.ttf', tajawalFontBase64);
+    doc.addFont('Tajawal-Regular.ttf', 'Tajawal', 'normal');
+    doc.setFont('Tajawal');
+
+    // 8) إدراج الصورة
+    const imgW = 210;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgW, imgH);
+
+    // 9) الحفظ
+    const fileName = `سجل_المهارات_${traineeData.name || 'متدرب'}_${traineeData.studentId || currentUser.id}.pdf`;
+    doc.save(fileName);
+
+    updateFileOverlay('✅ تم إنشاء ملف PDF!', 'يبدأ التنزيل الآن...');
+  } catch (err) {
+    console.error('❌ فشل التصدير:', err);
+    updateFileOverlay('⚠️ حدث خطأ', err.message || 'فشل إنشاء PDF', true);
+  } finally {
+    spinner?.classList.add('hidden');
+    setTimeout(() => hideFileOverlay(0), 2000);
+  }
+}
+
+
+
+// ✅ نسخة موحّدة: تبني الـ PDF من "المهارات المعتمدة فقط" + تاريخ الورشة
+function createPDFHTML(traineeData, skills) {
+  // فلترة المعتمد فقط وحساب الإجمالي
+  const approved = (skills || []).filter(s => String(s.status).trim() === 'معتمد' && Number(s.hours) > 0);
+  const totalHours = approved.reduce((sum, s) => sum + Number(s.hours || 0), 0);
+
+  return `
+    <div class="pdf-template" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 25px; direction: rtl; background: white; min-height: 297mm;">
+      <!-- الترويسة -->
+      <div style="text-align: center; margin-bottom: 30px; border-bottom: 3px solid #186F65; padding-bottom: 20px;">
+        <h1 style="color: #186F65; margin: 0; font-size: 28px; font-weight: bold;">المؤسسة العامة للتدريب التقني والمهني</h1>
+        <h2 style="color: #2D3748; margin: 15px 0 0 0; font-size: 22px; font-weight: 600;">سجل المهارات الشخصية</h2>
+      </div>
+      
+      <!-- معلومات المتدرب -->
+      <div style="background: #F7FAFC; padding: 20px; border-radius: 12px; margin-bottom: 25px; border-right: 4px solid #186F65;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div style="font-size: 16px;"><strong>الاسم:</strong> ${traineeData.name || ''}</div>
+          <div style="font-size: 16px;"><strong>رقم الطالب:</strong> ${traineeData.studentId || ''}</div>
+          <div style="font-size: 16px;"><strong>التخصص:</strong> ${traineeData.major || traineeData.department || ''}</div>
+          <div style="font-size: 16px;"><strong>الفصل الدراسي:</strong> ${traineeData.semester || ''}</div>
+          <div style="font-size: 16px;"><strong>السنة التدريبية:</strong> ${traineeData.year || '—'}</div>
+        </div>
+      </div>
+      
+      <!-- جدول المهارات (المعتمد فقط) -->
+                <div style="margin-bottom:30px;">
+            <h3 style="color:#2D3748; margin-bottom:15px; font-size:18px; border-bottom:2px solid #E2E8F0; padding-bottom:8px;">السجل التدريبي</h3>
+            <table style="width:100%; border-collapse:collapse; border:1px solid #E2E8F0;">
+              <thead>
+                <tr style="background:#186F65; color:white;">
+                  <th style="padding:12px; border:1px solid #CBD5E0; text-align:center; width:60px;">#</th>
+                  <th style="padding:12px; border:1px solid #CBD5E0; text-align:right;">اسم المهارة / الورشة</th>
+                  <th style="padding:12px; border:1px solid #CBD5E0; text-align:center; width:100px;">الساعات</th>
+                  <th style="padding:12px; border:1px solid #CBD5E0; text-align:center; width:100px;">الحالة</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${approved.map((skill, index) => `
+                  <tr style="${index % 2 === 0 ? 'background:#F7FAFC;' : 'background:white;'}">
+                    <td style="padding:10px; border:1px solid #E2E8F0; text-align:center; font-size:14px;">${index + 1}</td>
+                    <td style="padding:10px; border:1px solid #E2E8F0; text-align:right; font-size:14px;"><strong>${skill.name || ''}</strong></td>
+                    <td style="padding:10px; border:1px solid #E2E8F0; text-align:center; font-size:14px;">${skill.hours || 0} ساعة</td>
+                    <td style="padding:10px; border:1px solid #E2E8F0; text-align:center; font-size:14px;">
+                      <span style="color:#186F65; font-weight:bold;">معتمد</span>
+                    </td>
+                  </tr>
+                `).join('')}
+                <tr style="background:#EDF2F7; font-weight:bold;">
+                  <td style="padding:12px; border:1px solid #CBD5E0; text-align:center;"></td>
+                  <td style="padding:12px; border:1px solid #CBD5E0; text-align:right; font-size:15px;">الإجمالي</td>
+                  <td style="padding:12px; border:1px solid #CBD5E0; text-align:center; font-size:15px; color:#186F65;">${totalHours} ساعة</td>
+                  <td style="padding:12px; border:1px solid #CBD5E0; text-align:center;"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+      
+      <!-- التواقيع -->
+      <div style="margin-top: 50px; padding-top: 30px; border-top: 2px solid #186F65;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; text-align: center;">
+          <div>
+            <div style="margin-bottom: 60px; font-size: 16px; font-weight: bold; color: #2D3748;">رئيس القسم</div>
+            <div style="border-top: 1px solid #CBD5E0; padding-top: 8px; font-size: 14px; color: #4A5568;">
+              ${traineeData.headOfDepartment || '_____________'}
+            </div>
+          </div>
+          <div>
+            <div style="margin-bottom: 60px; font-size: 16px; font-weight: bold; color: #2D3748;">وكيل شؤون المتدربين</div>
+            <div style="border-top: 1px solid #CBD5E0; padding-top: 8px; font-size: 14px; color: #4A5568;">
+              ${traineeData.deanOfStudents || '_____________'}
+            </div>
+          </div>
+          <div>
+            <div style="margin-bottom: 60px; font-size: 16px; font-weight: bold; color: #2D3748;">العميد</div>
+            <div style="border-top: 1px solid #CBD5E0; padding-top: 8px; font-size: 14px; color: #4A5568;">
+              ${traineeData.dean || '_____________'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 40px; text-align: center; color: #718096; font-size: 12px; border-top: 1px solid #E2E8F0; padding-top: 15px;">
+        تم إنشاء هذا السجل آلياً عبر نظام سجل المهارات - الكلية التقنية بحقل
+      </div>
+    </div>
+  `;
+}
+
+
+// ✅ إنشاء حاوية PDF
+function createPDFContainer() {
+  const container = document.createElement('div');
+  container.id = 'pdfExportContainer';
+  container.style.cssText = `
+    position: fixed;
+    left: -10000px;
+    top: -10000px;
+    width: 210mm;
+    min-height: 297mm;
+    background: white;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    z-index: -1000;
+  `;
+  document.body.appendChild(container);
+  return container;
+}
+
+// ✅ بديل مبسّط باستخدام pdfmake (إذا فشل الحل الأول)
+async function exportTraineePDFSimple() {
+  try {
+    showFileOverlay('📄 جاري إنشاء ملف PDF...', 'قد يستغرق بضع ثوانٍ');
+
+    // جلب البيانات
+    const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=exportTraineeXlsx&userId=${encodeURIComponent(currentUser.id)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (!data.success) throw new Error('تعذر جلب البيانات');
+    
+    const traineeData = data.traineeData || {};
+    const skills = data.skills || [];
+    const totalHours = skills.reduce((sum, s) => sum + Number(s.hours || 0), 0);
+
+    // إنشاء محتوى PDF
+    const docDefinition = {
+      pageSize: 'A4',
+      pageMargins: [40, 60, 40, 60],
+      content: [
+        // الترويسة
+        {
+          text: 'المؤسسة العامة للتدريب التقني والمهني',
+          style: 'header'
+        },
+        {
+          text: 'سجل المهارات الشخصية',
+          style: 'subheader'
+        },
+        
+        // معلومات المتدرب
+        {
+          text: 'معلومات المتدرب',
+          style: 'sectionHeader'
+        },
+        {
+          columns: [
+            {
+              width: '*',
+              text: [
+                { text: 'الاسم: ', style: 'label' },
+                { text: traineeData.name || '', style: 'value' },
+                { text: '\nالتخصص: ', style: 'label' },
+                { text: traineeData.major || traineeData.department || '', style: 'value' }
+              ]
+            },
+            {
+              width: '*',
+              text: [
+                { text: 'رقم الطالب: ', style: 'label' },
+                { text: traineeData.studentId || '', style: 'value' },
+                { text: '\nالفصل الدراسي: ', style: 'label' },
+                { text: traineeData.semester || '', style: 'value' },
+                { text: '\nالسنة التدريبية: ', style: 'label' },
+                { text: traineeData.year || '—', style: 'value' }
+              ]
+            }
+          ],
+          margin: [0, 0, 0, 20]
+        },
+        
+        // جدول المهارات
+        {
+          text: 'السجل التدريبي',
+          style: 'sectionHeader'
+        },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', '*', 'auto', 'auto'],
+            body: [
+              [
+                { text: '#', style: 'tableHeader' },
+                { text: 'اسم المهارة', style: 'tableHeader' },
+                { text: 'الساعات', style: 'tableHeader' },
+                { text: 'الحالة', style: 'tableHeader' }
+              ],
+              ...skills.map((skill, index) => [
+                { text: (index + 1).toString(), style: 'tableCell' },
+                { text: skill.name || '', style: 'tableCell' },
+                { text: `${skill.hours || 0} ساعة`, style: 'tableCell' },
+                { text: skill.status || '', style: 'tableCell' }
+              ]),
+              [
+                { text: '', style: 'tableCell' },
+                { text: 'الإجمالي', style: 'tableFooter' },
+                { text: `${totalHours} ساعة`, style: 'tableFooter' },
+                { text: '', style: 'tableCell' }
+              ]
+            ]
+          },
+          layout: 'lightHorizontalLines'
+        },
+        
+        // التواقيع
+        {
+          text: ' ',
+          margin: [0, 30, 0, 0]
+        },
+        {
+          columns: [
+            {
+              width: '*',
+              stack: [
+                { text: 'رئيس القسم', style: 'signatureLabel' },
+                { text: traineeData.headOfDepartment || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            },
+            {
+              width: '*',
+              stack: [
+                { text: 'وكيل شؤون المتدربين', style: 'signatureLabel' },
+                { text: traineeData.deanOfStudents || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            },
+            {
+              width: '*',
+              stack: [
+                { text: 'العميد', style: 'signatureLabel' },
+                { text: traineeData.dean || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            }
+          ]
+        }
+      ],
+      styles: {
+        header: {
+          fontSize: 20,
+          bold: true,
+          color: '#186F65',
+          alignment: 'center',
+          margin: [0, 0, 0, 10]
+        },
+        subheader: {
+          fontSize: 16,
+          bold: true,
+          alignment: 'center',
+          margin: [0, 0, 0, 30]
+        },
+        sectionHeader: {
+          fontSize: 14,
+          bold: true,
+          margin: [0, 15, 0, 10],
+          color: '#2D3748'
+        },
+        label: {
+          fontSize: 12,
+          bold: true,
+          color: '#4A5568'
+        },
+        value: {
+          fontSize: 12,
+          color: '#2D3748'
+        },
+        tableHeader: {
+          bold: true,
+          fontSize: 11,
+          color: 'white',
+          fillColor: '#186F65',
+          alignment: 'center'
+        },
+        tableCell: {
+          fontSize: 10
+        },
+        tableFooter: {
+          bold: true,
+          fontSize: 11,
+          fillColor: '#F7FAFC'
+        },
+        signatureLabel: {
+          fontSize: 12,
+          bold: true,
+          margin: [0, 0, 0, 40]
+        },
+        signatureValue: {
+          fontSize: 11
+        }
+      },
+      defaultStyle: {
+        font: 'Helvetica',
+        alignment: 'right'
+      }
+    };
+
+    // إنشاء PDF
+    pdfMake.createPdf(docDefinition).download(`سجل_المهارات_${traineeData.name || 'متدرب'}_${traineeData.studentId || currentUser.id}.pdf`);
+    
+    updateFileOverlay('✅ تم إنشاء ملف PDF!', 'يبدأ التنزيل الآن...');
+    
+  } catch (err) {
+    console.error('❌ فشل التصدير:', err);
+    updateFileOverlay('⚠️ حدث خطأ', err.message || 'فشل إنشاء PDF', true);
+  } finally {
+    setTimeout(() => hideFileOverlay(0), 2000);
+  }
+}
+
+
+// ✅ تصدير PDF باستخدام pdfmake (دعم عربي أفضل)
+async function exportTraineePDFWithPdfMake() {
+  try {
+    showFileOverlay('📄 جاري إنشاء ملف PDF...', 'قد يستغرق بضع ثوانٍ');
+
+    // جلب البيانات
+    const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=exportTraineeXlsx&userId=${encodeURIComponent(currentUser.id)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (!data.success) throw new Error('تعذر جلب البيانات');
+    
+    const traineeData = data.traineeData || {};
+    const skills = data.skills || [];
+    const totalHours = skills.reduce((sum, s) => sum + Number(s.hours || 0), 0);
+
+    // تعريف الخطوط العربية
+    pdfMake.fonts = {
+      Amiri: {
+        normal: 'https://cdn.jsdelivr.net/gh/opentypejs/amiri-font/Amiri-Regular.ttf',
+        bold: 'https://cdn.jsdelivr.net/gh/opentypejs/amiri-font/Amiri-Bold.ttf',
+        italics: 'https://cdn.jsdelivr.net/gh/opentypejs/amiri-font/Amiri-Italic.ttf',
+        bolditalics: 'https://cdn.jsdelivr.net/gh/opentypejs/amiri-font/Amiri-BoldItalic.ttf'
+      }
+    };
+
+    const docDefinition = {
+      pageSize: 'A4',
+      pageMargins: [40, 60, 40, 60],
+      defaultStyle: {
+        font: 'Amiri',
+        alignment: 'right'
+      },
+      content: [
+        // الترويسة
+        {
+          text: 'المؤسسة العامة للتدريب التقني والمهني',
+          style: 'header'
+        },
+        {
+          text: 'سجل المهارات الشخصية',
+          style: 'subheader'
+        },
+        
+        // معلومات المتدرب
+        {
+          text: 'معلومات المتدرب',
+          style: 'sectionHeader'
+        },
+        {
+          columns: [
+            {
+              width: '*',
+              stack: [
+                { text: `الاسم: ${traineeData.name || ''}` },
+                { text: `التخصص: ${traineeData.major || ''}` }
+              ]
+            },
+            {
+              width: '*',
+              stack: [
+                { text: `رقم الطالب: ${traineeData.studentId || ''}` },
+                { text: `الفصل الدراسي: ${traineeData.semester || ''}` },
+                { text: `السنة التدريبية: ${traineeData.year || '—'}` }
+              ]
+            }
+          ],
+          margin: [0, 0, 0, 15]
+        },
+        
+        // جدول المهارات
+        {
+          text: 'السجل التدريبي',
+          style: 'sectionHeader'
+        },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', '*', 'auto', 'auto'],
+            body: [
+              [
+                { text: '#', style: 'tableHeader' },
+                { text: 'اسم المهارة', style: 'tableHeader' },
+                { text: 'الساعات', style: 'tableHeader' },
+                { text: 'الحالة', style: 'tableHeader' }
+              ],
+              ...skills.map((skill, index) => [
+                { text: (index + 1).toString(), style: 'tableCell' },
+                { text: skill.name || '', style: 'tableCell' },
+                { text: `${skill.hours || 0} ساعة`, style: 'tableCell' },
+                { text: skill.status || '', style: 'tableCell' }
+              ]),
+              [
+                { text: '', style: 'tableCell' },
+                { text: 'الإجمالي', style: 'tableFooter' },
+                { text: `${totalHours} ساعة`, style: 'tableFooter' },
+                { text: '', style: 'tableCell' }
+              ]
+            ]
+          },
+          layout: {
+            hLineWidth: () => 1, vLineWidth: () => 1,
+            hLineColor: () => '#cccccc', vLineColor: () => '#cccccc',
+            paddingLeft: () => 8, paddingRight: () => 8,
+            paddingTop: () => 4, paddingBottom: () => 4
+          }
+        },
+        
+        // التواقيع
+        {
+          text: ' ',
+          margin: [0, 30, 0, 0]
+        },
+        {
+          columns: [
+            {
+              width: '*',
+              stack: [
+                { text: 'رئيس القسم', style: 'signatureLabel' },
+                { text: traineeData.headOfDepartment || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            },
+            {
+              width: '*',
+              stack: [
+                { text: 'وكيل شؤون المتدربين', style: 'signatureLabel' },
+                { text: traineeData.deanOfStudents || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            },
+            {
+              width: '*',
+              stack: [
+                { text: 'العميد', style: 'signatureLabel' },
+                { text: traineeData.dean || '_____________', style: 'signatureValue' }
+              ],
+              alignment: 'center'
+            }
+          ]
+        }
+      ],
+      styles: {
+        header: {
+          fontSize: 20,
+          bold: true,
+          color: '#186F65',
+          alignment: 'center',
+          margin: [0, 0, 0, 10]
+        },
+        subheader: {
+          fontSize: 16,
+          bold: true,
+          alignment: 'center',
+          margin: [0, 0, 0, 30]
+        },
+        sectionHeader: {
+          fontSize: 14,
+          bold: true,
+          margin: [0, 15, 0, 10],
+          color: '#333'
+        },
+        tableHeader: {
+          bold: true,
+          fontSize: 12,
+          color: 'white',
+          fillColor: '#186F65',
+          alignment: 'center'
+        },
+        tableCell: {
+          fontSize: 10,
+          margin: [0, 4, 0, 4]
+        },
+        tableFooter: {
+          bold: true,
+          fontSize: 11,
+          fillColor: '#f0f0f0'
+        },
+        signatureLabel: {
+          fontSize: 12,
+          bold: true,
+          margin: [0, 0, 0, 40]
+        },
+        signatureValue: {
+          fontSize: 11,
+          margin: [0, 10, 0, 0]
+        }
+      }
+    };
+
+    // إنشاء PDF
+    pdfMake.createPdf(docDefinition).download(`سجل_المهارات_${traineeData.name}_${traineeData.studentId}.pdf`);
+    
+    updateFileOverlay('✅ تم إنشاء ملف PDF!', 'يبدأ التنزيل الآن...');
+    
+  } catch (err) {
+    console.error('❌ فشل التصدير:', err);
+    updateFileOverlay('⚠️ حدث خطأ', err.message || 'فشل إنشاء PDF', true);
+  } finally {
+    setTimeout(() => hideFileOverlay(0), 2000);
+  }
+}
+
+// ✅ صحيحة: نسخة موحّدة لا تتكرر، تختار أفضل مسار تلقائيًا
+// 1) تفضّل html2canvas + jsPDF (أفضل للعربية)
+// 2) إن تعذّر، تستخدم pdfmake
+// 3) إن لم تتوفر مكتبات PDF، تعرض تنبيه واضح
+async function exportSkillsPDF() {
+  if (typeof html2canvas !== 'undefined' && window.jspdf) {
+    await exportTraineePDF();            // يستخدم createPDFHTML + الخطوط + jsPDF
+  } else if (typeof pdfMake !== 'undefined') {
+    await exportTraineePDFSimple();      // بديل pdfmake مع جداول عربية
+  } else {
+    alert('⚠️ لم يتم تحميل مكتبات PDF. تأكد من إضافة html2canvas و jsPDF أو pdfmake في index.html');
+    console.error('مكتبات PDF غير محمّلة:', {
+      html2canvas: typeof html2canvas,
+      jspdf: typeof window.jspdf,
+      pdfmake: typeof pdfMake
+    });
   }
 }
 
@@ -1643,6 +2870,7 @@ async function viewWorkshopDetailsBasic(workshopId) {
       return alert('تعذر تحديث البيانات لعرض التفاصيل.');
     }
   }
+  upgradeIcons(document.getElementById('workshopDetailsModal'));
 
   // املأ الهيدر وافتح المودال
   titleEl.textContent = ws.name;
@@ -1684,82 +2912,720 @@ async function viewWorkshopDetailsBasic(workshopId) {
   renderWorkshopParticipants(document.getElementById('wDetParticipants'), participants);
 }
 
+// ===============================================
+// ⚡ نظام الاعتماد الجماعي للمدرب
+// ===============================================
 
+// ملء قائمة الورش في select الاعتماد الجماعي
+function populateBulkWorkshopSelect() {
+  const select = document.getElementById('bulkWorkshopSelect');
+  if (!select || !window.trainerWorkshops) return;
+  
+  // فلترة الورش النشطة/المتاحة فقط
+  const activeWorkshops = (window.trainerWorkshops || []).filter(w => 
+    w.status === 'نشط' || w.status === 'متاح'
+  );
+  
+  select.innerHTML = '<option value="">-- اختر ورشة --</option>' +
+    activeWorkshops.map(w => 
+      `<option value="${w.id}">${w.name} (${w.date})</option>`
+    ).join('');
+}
 
-// ✅ توليد شهادة PNG محليًا للمهارة "المعتمدة"
-function downloadCertificate(skillId) {
+// اعتماد جماعي لجميع السجلات المعلقة
+async function bulkApproveAll(action) {
+  const actionText = action === 'approve' ? 'اعتماد حضور' : 
+                     action === 'noshow' ? 'تعليم كـ "لم يحضر" لـ' : 
+                     'إعادة لحالة معلق لـ';
+  
+  const confirm = window.confirm(
+    `هل أنت متأكد من ${actionText} جميع السجلات المعلقة؟\n\n` +
+    `⚠️ هذا الإجراء سيؤثر على جميع المتدربين في كل ورشك.`
+  );
+  
+  if (!confirm) return;
+  
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  
   try {
-    const skill = (window.traineeSkillsCache || [])[Number(skillId)] // لأنك استخدمت i كـ id في الجدول
-                 || (window.traineeSkillsCache || []).find(s => String(s.id) === String(skillId));
-
-    if (!skill) {
-      console.error('❌ لم يتم العثور على السجل المطلوب للشهادة:', skillId); // سطر خطأ
-      return alert('تعذر العثور على بيانات الشهادة.');
+    showFileOverlay('⚡ جاري المعالجة الجماعية...', 'قد يستغرق بضع ثوانٍ');
+    
+    const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'bulkApproveAttendance',
+        trainerId: currentUser.id,
+        workshopId: null, // null = كل الورش
+        action: action
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data?.success) {
+      updateFileOverlay(
+        '✅ تمت المعالجة بنجاح', 
+        `تم ${actionText} ${data.processedCount || 0} سجل`
+      );
+      
+      setTimeout(async () => {
+        hideFileOverlay(0);
+        await loadTrainerData(); // إعادة تحميل البيانات
+        alert(`✅ تم ${actionText} ${data.processedCount || 0} سجل بنجاح!`);
+      }, 2000);
+    } else {
+      throw new Error(data?.message || 'فشلت العملية');
     }
-    if (skill.status !== 'معتمد') {
-      return alert('الشهادة متاحة فقط للسجلات المعتمدة.');
-    }
-
-
-    // خصائص الشهادة
-    const traineeName = currentUser?.name || 'المتدرب';
-    const skillName   = skill.name || 'مهارة';
-    const hours       = skill.hours || 0;
-    const dateTxt     = skill.date || '';
-
-    // Canvas
-    const W = 1280, H = 900;
-    const c = document.createElement('canvas');
-    c.width = W; c.height = H;
-    const ctx = c.getContext('2d');
-
-    // خلفية بسيطة
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0,0,W,H);
-
-    // إطار
-    ctx.strokeStyle = '#186F65';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(30,30,W-60,H-60);
-
-    // ترويسة
-    ctx.fillStyle = '#186F65';
-    ctx.font = 'bold 42px "Tahoma"';
-    ctx.fillText('المؤسسة العامة للتدريب التقني والمهني', 80, 110);
-
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 56px "Tahoma"';
-    ctx.fillText('شهادة إتمام مهارة', 80, 190);
-
-    // نص الشهادة
-    ctx.font = '28px "Tahoma"';
-    ctx.fillText(`يُمنح ${traineeName} هذه الشهادة لإتمامه مهارة:`, 80, 270);
-
-    ctx.font = 'bold 36px "Tahoma"';
-    ctx.fillText(skillName, 80, 320);
-
-    ctx.font = '28px "Tahoma"';
-    ctx.fillText(`عدد الساعات: ${hours}`, 80, 380);
-    ctx.fillText(`التاريخ: ${dateTxt}`, 80, 430);
-
-    // توقيعات/جهات
-    ctx.font = '24px "Tahoma"';
-    ctx.fillText('رئيس القسم:', 80, H-160);
-    ctx.fillText('وكيل شؤون المتدربين:', 80, H-120);
-    ctx.fillText('العميد:', 80, H-80);
-
-    // تحميل
-    const link = document.createElement('a');
-    link.download = `شهادة_${traineeName}_${skillName}.png`;
-    link.href = c.toDataURL('image/png');
-    link.click();
-  } catch (e) {
-    console.error('خطأ أثناء توليد الشهادة:', e); // ← سطر الخطأ
-    alert('حدث خطأ أثناء توليد الشهادة.');
+  } catch (err) {
+    console.error('خطأ في الاعتماد الجماعي:', err);
+    updateFileOverlay('❌ فشلت العملية', err.message, true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+  } finally {
+    spinner?.classList.add('hidden');
   }
 }
 
-function viewDepartmentDetails(departmentName){ alert('سيتم فتح تفاصيل قسم: ' + departmentName); }
+// اعتماد جماعي لورشة محددة
+async function bulkApproveByWorkshop(action) {
+  const select = document.getElementById('bulkWorkshopSelect');
+  const workshopId = select?.value;
+  
+  if (!workshopId) {
+    alert('⚠️ يرجى اختيار ورشة أولاً');
+    return;
+  }
+  
+  const workshopName = select.options[select.selectedIndex].text;
+  const actionText = action === 'approve' ? 'اعتماد حضور' : 'تعليم كـ "لم يحضر" لـ';
+  
+  const confirm = window.confirm(
+    `هل أنت متأكد من ${actionText} جميع المتدربين في:\n\n` +
+    `📋 ${workshopName}\n\n` +
+    `⚠️ سيتم تطبيق هذا على جميع السجلات المعلقة في هذه الورشة.`
+  );
+  
+  if (!confirm) return;
+  
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  
+  try {
+    showFileOverlay('⚡ جاري المعالجة...', `معالجة الورشة: ${workshopName}`);
+    
+    const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'bulkApproveAttendance',
+        trainerId: currentUser.id,
+        workshopId: workshopId,
+        action: action
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data?.success) {
+      updateFileOverlay(
+        '✅ تمت المعالجة بنجاح', 
+        `تم ${actionText} ${data.processedCount || 0} متدرب`
+      );
+      
+      setTimeout(async () => {
+        hideFileOverlay(0);
+        await loadTrainerData(); // إعادة تحميل البيانات
+        alert(`✅ تم ${actionText} ${data.processedCount || 0} متدرب في الورشة!`);
+        
+        // إعادة تعيين القائمة
+        select.value = '';
+      }, 2000);
+    } else {
+      throw new Error(data?.message || 'فشلت العملية');
+    }
+  } catch (err) {
+    console.error('خطأ في الاعتماد الجماعي:', err);
+    updateFileOverlay('❌ فشلت العملية', err.message, true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+  } finally {
+    spinner?.classList.add('hidden');
+  }
+}
+
+// تعديل renderTrainerWorkshops لملء select الورش
+const originalRenderTrainerWorkshops = renderTrainerWorkshops;
+renderTrainerWorkshops = function(workshops) {
+  originalRenderTrainerWorkshops(workshops);
+  populateBulkWorkshopSelect(); // ملء قائمة الورش للاعتماد الجماعي
+};
+
+// --- ضع هذه الدالة مرّة واحدة أعلى الملف (مساعدة آمنة للتنزيل) ---
+function triggerBlobDownload(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+
+  // Safari iOS/macOS قد يتجاهل download مع blob إذا لم يكن العنصر في الـ DOM
+  document.body.appendChild(a);
+
+  // إذا المتصفح لا يدعم download (بعض Safari قد يعيده undefined)
+  if (typeof a.download === 'undefined') {
+    window.open(url, '_blank'); // فتح الصورة في تبويب — يقدر المستخدم يحفظها
+  } else {
+    a.click();
+  }
+
+  // تنظيف
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 0);
+}
+ 
+
+// ====== 🎓 نظام شهادات PDF احترافي مع دعم العربية الكامل ======
+
+// ✅ المسار الصحيح للخلفية
+const CERT_BG_URL = 'templates/cert_bg_a4.png'; // ← غيّرها لمسار قالبك إن لزم
+
+// ✅ أبعاد الشهادة (A4 Landscape)
+const CERT_WIDTH = 297; // mm
+const CERT_HEIGHT = 210; // mm
+
+// تحكم في المسافات الرأسية حول الاسم
+// مسافات قابلة للتعديل بدقّة (بالملِّيمتر)
+const PREAMBLE_TOP_SHIFT_MM   = 15;  // نزول فقرة "تشهد المؤسسة..." عن أعلى الصفحة
+const GAP_PREAMBLE_TO_NAME_MM = 4;   // المسافة بين "بأن المتدرب" واسم المتدرب
+const GAP_NAME_TO_SKILL_MM    = 2.5; // المسافة بين اسم المتدرب و"قد أتم بنجاح"
+const CERT_SPACING_ABOVE_NAME_MM = 0.5; // المسافة بين "بأن المتدرب/ة" واسم المتدرب
+const CERT_NAME_BOTTOM_MM = 0;        // المسافة تحت اسم المتدرب قبل نص المهارة
+const SKILL_TOP_MARGIN_MM = 2;          // جديد: مسافة صغيرة جداً قبل "قد أتم بنجاح"
+const CERT_NAME_UNDERLINE_OFFSET_MM = 1.5; // بُعد خط التسطير (اختياري لتقليل الفراغ البصري)
+
+
+// ارفع النص للأعلى بمقدار 3 سم (30mm)
+const CERT_TEXT_TOP_MM = 10; // كان 60mm، الآن 30mm = أعلى بمقدار 3cm
+
+
+const SIGN_LINE_COLOR = '#000';     // لون الخط (أسود)
+const SIGN_LINE_THICK = 2;          // سماكة الخط px
+const SIGN_GAP_ABOVE_LINE_MM = 3;   // مسافة فوق الخط (بين الاسم والخط)
+const SIGN_ROLE_SIZE_PT = 16;       // حجم نص المسمّى
+const SIGN_NAME_SIZE_PT = 11;       // حجم اسم الموقّع
+const SHOW_SIGN_LINE = false; // ← خلّيه false لحذف الخط
+
+
+
+// ✅ إنشاء HTML للشهادة مع التصميم الكامل
+function createCertificateHTML({
+  traineeName,
+  skillName,
+  hours,
+  dateText,
+  serial,
+  signatures,
+  bgImage
+}) {
+  // تحديد اتجاه الصفحة
+  const pageDir =
+    (document?.documentElement?.dir || document?.dir || 'rtl').toLowerCase();
+  const isRTL = pageDir === 'rtl' ||
+                /[\u0600-\u06FF]/.test(String(traineeName) + String(skillName));
+
+  // زاوية الرقم حسب الاتجاه
+  const serialCornerStyle = isRTL
+    ? 'right:8mm; left:auto; text-align:right; direction:rtl;'
+    : 'left:8mm; right:auto; text-align:left; direction:ltr;';
+
+  // إزاحة إضافية 2 سم للنص "تشهد المؤسسة..."
+  const PREAMBLE_EXTRA_OFFSET_MM = 15;
+
+  return `
+    <div id="certificateContainer" style="
+      width:${CERT_WIDTH}mm;
+      height:${CERT_HEIGHT}mm;
+      position:relative;
+      background:white;
+      font-family:'Cairo','Tajawal','Segoe UI',Tahoma,sans-serif;
+      direction:${isRTL ? 'rtl' : 'ltr'};
+      overflow:hidden;
+    ">
+      <!-- الخلفية -->
+      <img src="${bgImage}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" />
+
+      <!-- المحتوى -->
+      <div style="
+        position:absolute; inset:0;
+        display:flex; flex-direction:column; justify-content:center; align-items:center;
+        text-align:center; padding:40mm 30mm; box-sizing:border-box;
+      ">
+
+        <!-- نص الشهادة (مرفوع/مُنزل حسب الطلب) -->
+        <div style="margin-top:${CERT_TEXT_TOP_MM}mm;">
+        <p style="
+          margin:${PREAMBLE_TOP_SHIFT_MM}mm 0 ${GAP_PREAMBLE_TO_NAME_MM}mm 0;
+          font-size:16pt; font-weight:600; line-height:1.6;
+          color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,.6);
+        ">
+          تشهد المؤسسة العامة للتدريب التقني والمهني<br>
+          الكلية التقنية بحقل<br>
+          بأن المتدرب
+        </p>
+
+        <!-- اسم المتدرب -->
+        <h1 style="
+          font-size:28pt; font-weight:800; line-height:1.1;
+          margin:0 0 ${GAP_NAME_TO_SKILL_MM}mm 0;
+          color:#ffffff; text-shadow:0 2px 3px rgba(0,0,0,.65);
+          text-decoration:underline; text-decoration-color:#ffffff;
+          text-underline-offset:${CERT_NAME_UNDERLINE_OFFSET_MM}mm;
+        ">
+          ${traineeName}
+        </h1>
+
+        <!-- "قد أتم بنجاح..." + اسم المهارة -->
+        <p style="
+          font-size:18pt; margin:0; font-weight:600;
+          color:#E6F6F3; text-shadow:0 1px 2px rgba(0,0,0,.5);
+        ">
+          قد أتم بنجاح الدورة التدريبية<br>
+          <span style="
+            font-size:22pt; font-weight:800; display:inline-block;
+            margin-top:${SKILL_TOP_MARGIN_MM}mm; color:#ffffff;
+          ">
+            ${skillName}
+          </span>
+        </p>
+
+
+          <!-- الساعات والتاريخ -->
+          <div style="
+            display:flex; justify-content:center; gap:20mm; margin:8mm 0; font-size:14pt;
+            color:#F1FCFA; text-shadow:0 1px 2px rgba(0,0,0,.45);
+          ">
+            <div><strong>عدد الساعات:</strong> ${hours} ساعة تدريبية</div>
+            <div><strong>التاريخ:</strong> ${dateText}</div>
+          </div>
+        </div>
+
+        <!-- التواقيع (رئيس القسم → وكيل شؤون المتدربين → العميد) -->
+        <div style="
+          position:absolute; bottom:20mm; left:0; right:0;
+          display:flex; justify-content:space-around; padding:0 30mm;
+        ">
+          <!-- رئيس القسم -->
+          <div style="text-align:center; min-width:60mm;">
+            <div style="font-size:${SIGN_ROLE_SIZE_PT}pt; font-weight:700; color:#ffffff; margin-bottom:8mm; text-shadow:0 1px 2px rgba(0,0,0,.5);">
+              رئيس القسم
+            </div>
+            <div style="font-size:${SIGN_NAME_SIZE_PT}pt; font-weight:600; color:#F1FCFA; text-shadow:0 1px 2px rgba(0,0,0,.4);">
+              ${signatures.hod || '_____________'}
+            </div>
+          </div>
+
+          <!-- وكيل شؤون المتدربين -->
+          <div style="text-align:center; min-width:60mm;">
+            <div style="font-size:${SIGN_ROLE_SIZE_PT}pt; font-weight:700; color:#ffffff; margin-bottom:8mm; text-shadow:0 1px 2px rgba(0,0,0,.5);">
+              وكيل شؤون المتدربين
+            </div>
+            <div style="font-size:${SIGN_NAME_SIZE_PT}pt; font-weight:600; color:#F1FCFA; text-shadow:0 1px 2px rgba(0,0,0,.4);">
+              ${signatures.deanStd || '_____________'}
+            </div>
+          </div>
+
+          <!-- العميد -->
+          <div style="text-align:center; min-width:60mm;">
+            <div style="font-size:${SIGN_ROLE_SIZE_PT}pt; font-weight:700; color:#ffffff; margin-bottom:8mm; text-shadow:0 1px 2px rgba(0,0,0,.5);">
+              العميد
+            </div>
+            <div style="font-size:${SIGN_NAME_SIZE_PT}pt; font-weight:600; color:#F1FCFA; text-shadow:0 1px 2px rgba(0,0,0,.4);">
+              ${signatures.dean || '_____________'}
+            </div>
+          </div>
+        </div>
+
+        <!-- الرقم التسلسلي (يسار) -->
+        <div style="
+          position:absolute; bottom:6mm; left:8mm; right:auto;
+          text-align:left; direction:ltr;
+          font-size:10pt; font-weight:700; letter-spacing:.4px;
+          color:#ffffff; text-shadow:0 1px 2px rgba(0,0,0,.6); opacity:.95;
+          font-family:monospace;
+        ">
+          ${serial}
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+
+// ✅ تحويل صورة إلى Data URL
+async function imageToDataURL(url) {
+  return new Promise((resolve, reject) => {
+    console.log('🔄 بدء تحميل الصورة:', url);
+    
+    const xhr = new XMLHttpRequest();
+    
+    xhr.timeout = 15000; // 15 ثانية timeout
+    
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          console.log('✅ تم تحميل الصورة بنجاح');
+          resolve(reader.result);
+        };
+        reader.onerror = (error) => {
+          console.error('❌ خطأ في FileReader:', error);
+          reject(new Error('فشل قراءة ملف الصورة'));
+        };
+        reader.readAsDataURL(xhr.response);
+      } else {
+        reject(new Error(`فشل تحميل الصورة: ${xhr.status} ${xhr.statusText}`));
+      }
+    };
+    
+    xhr.onerror = () => {
+      console.error('❌ خطأ شبكة في تحميل الصورة');
+      reject(new Error('خطأ في الاتصال بالشبكة'));
+    };
+    
+    xhr.ontimeout = () => {
+      console.error('⏱️ انتهت مهلة تحميل الصورة');
+      reject(new Error('انتهت مهلة تحميل الصورة. يرجى المحاولة مرة أخرى'));
+    };
+    
+    xhr.open('GET', url);
+    xhr.responseType = 'blob';
+    xhr.send();
+  });
+}
+
+// ✅ الدالة الرئيسية: توليد شهادة PDF
+async function generateCertificatePDF({
+  traineeName,
+  skillName,
+  hours,
+  dateText,
+  serial,
+  signatures
+}) {
+  const spinner = document.getElementById('loadingSpinner');
+  let container = null;
+  
+  try {
+    // 1) التحقق من المكتبات
+    console.log('🔍 فحص المكتبات المطلوبة...');
+    
+    if (typeof html2canvas === 'undefined') {
+      console.error('❌ html2canvas غير محملة');
+      throw new Error('مكتبة html2canvas غير محملة. يرجى إعادة تحميل الصفحة.');
+    }
+    if (typeof window.jspdf === 'undefined') {
+      console.error('❌ jsPDF غير محملة');
+      throw new Error('مكتبة jsPDF غير محملة. يرجى إعادة تحميل الصفحة.');
+    }
+    
+    console.log('✅ المكتبات متوفرة');
+
+    spinner?.classList.remove('hidden');
+    updateFileOverlay('📄 جاري إنشاء الشهادة...', 'تحميل القالب');
+
+    // 2) تحميل صورة الخلفية مع timeout
+    console.log('📥 تحميل صورة الخلفية من:', CERT_BG_URL);
+    updateFileOverlay('🎨 تجهيز التصميم...', 'تحميل الخلفية');
+    
+    let bgDataURL;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 ثانية
+      
+      bgDataURL = await imageToDataURL(CERT_BG_URL);
+      clearTimeout(timeoutId);
+      
+      console.log('✅ تم تحميل الخلفية بنجاح');
+    } catch (bgError) {
+      console.error('❌ فشل تحميل الخلفية:', bgError);
+      // استخدام خلفية بيضاء كبديل
+      bgDataURL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
+      console.warn('⚠️ سيتم استخدام خلفية بيضاء بديلة');
+    }
+
+    // 3) إنشاء HTML المؤقت
+    updateFileOverlay('✍️ كتابة البيانات...', 'إضافة المعلومات');
+    console.log('📝 إنشاء HTML للشهادة...');
+    
+    const certHTML = createCertificateHTML({
+      traineeName,
+      skillName,
+      hours,
+      dateText,
+      serial,
+      signatures,
+      bgImage: bgDataURL
+    });
+
+    // 4) حقن HTML في container مخفي
+    console.log('🔧 إنشاء الحاوية المؤقتة...');
+    
+    container = document.getElementById('pdfCertContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'pdfCertContainer';
+      container.style.cssText = `
+        position: fixed;
+        left: -10000px;
+        top: -10000px;
+        z-index: -9999;
+      `;
+      document.body.appendChild(container);
+    }
+    container.innerHTML = certHTML;
+
+    // 5) انتظار تحميل الخطوط والصور
+    updateFileOverlay('⏳ تحميل الخطوط...', 'يرجى الانتظار قليلاً');
+    console.log('⏳ انتظار تحميل الخطوط...');
+    
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await Promise.race([
+          document.fonts.ready,
+          new Promise(resolve => setTimeout(resolve, 3000)) // timeout 3 ثواني
+        ]);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      console.log('✅ الخطوط جاهزة');
+    } catch (fontError) {
+      console.warn('⚠️ تعذر انتظار الخطوط:', fontError);
+    }
+    
+    // مهلة إضافية للتأكد من رسم كل شيء
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 6) تحويل HTML إلى صورة
+    updateFileOverlay('📸 التقاط الشهادة...', 'تحويل إلى صورة عالية الدقة');
+    console.log('📸 بدء html2canvas...');
+    
+    const element = document.getElementById('certificateContainer');
+    
+    if (!element) {
+      throw new Error('لم يتم العثور على عنصر الشهادة في الصفحة');
+    }
+    
+    const canvas = await html2canvas(element, {
+      scale: 3, // دقة عالية
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+      onclone: (clonedDoc) => {
+        console.log('✅ تم نسخ المستند للمعالجة');
+      }
+    });
+    
+    console.log('✅ تم إنشاء Canvas بنجاح:', canvas.width, 'x', canvas.height);
+
+    // 7) إنشاء PDF
+    updateFileOverlay('📦 إنشاء ملف PDF...', 'التحضير للتنزيل');
+    console.log('📦 إنشاء ملف PDF...');
+    
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95); // استخدام JPEG للضغط
+    pdf.addImage(imgData, 'JPEG', 0, 0, CERT_WIDTH, CERT_HEIGHT);
+    
+    console.log('✅ تم إضافة الصورة للـ PDF');
+
+    // 8) التنزيل
+    updateFileOverlay('💾 حفظ الملف...', 'جاري التنزيل');
+    
+    const fileName = `شهادة_${traineeName.replace(/[\\/:*?"<>|]/g, '_')}_${skillName.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+    console.log('💾 حفظ الملف:', fileName);
+    
+    pdf.save(fileName);
+
+    updateFileOverlay('✅ تم إنشاء الشهادة!', 'اكتمل التنزيل بنجاح');
+    
+    console.log('🎉 تم إنشاء الشهادة بنجاح!');
+    
+    setTimeout(() => {
+      hideFileOverlay(0);
+      if (container && container.parentNode) {
+        container.remove();
+      }
+    }, 2000);
+
+  } catch (error) {
+    console.error('❌ فشل إنشاء الشهادة:', error);
+    console.error('تفاصيل الخطأ:', {
+      message: error.message,
+      stack: error.stack
+    });
+    
+    updateFileOverlay('⚠️ فشل إنشاء الشهادة', error.message, true);
+    setTimeout(() => hideFileOverlay(0), 4000);
+    throw error;
+  } finally {
+    spinner?.classList.add('hidden');
+    
+    // تنظيف الحاوية المؤقتة
+    if (container && container.parentNode) {
+      setTimeout(() => {
+        try {
+          container.remove();
+        } catch (e) {
+          console.warn('تعذر إزالة الحاوية:', e);
+        }
+      }, 3000);
+    }
+  }
+}
+
+// ✅ الدالة المستدعاة من الواجهة
+async function downloadCertificatePDF(skillId) {
+  const spinner = document.getElementById('loadingSpinner');
+  
+  try {
+    // 1) إظهار الانتظار فوراً
+    spinner?.classList.remove('hidden');
+    showFileOverlay('🎓 جاري تحضير الشهادة...', 'يرجى الانتظار');
+    
+    console.log('📋 بدء عملية إنشاء الشهادة للمهارة:', skillId);
+    
+    // 2) البحث عن المهارة
+    updateFileOverlay('🔍 جاري البحث عن المهارة...', 'قراءة البيانات');
+    
+    const skill = (window.traineeSkillsCache || []).find(s => 
+      String(s.id) === String(skillId)
+    );
+    
+    if (!skill) {
+      console.error('❌ لم يتم العثور على المهارة:', skillId);
+      throw new Error('تعذر العثور على بيانات المهارة');
+    }
+    
+    console.log('✅ تم العثور على المهارة:', skill.name);
+
+    // 3) التحقق من الصلاحية
+    const hours = Number(skill.hours || 0);
+    const status = String(skill.status || '').trim();
+    
+    if (status !== 'معتمد') {
+      updateFileOverlay('⚠️ تنبيه', 'الشهادة متاحة فقط للمهارات المعتمدة', true);
+      setTimeout(() => {
+        hideFileOverlay(0);
+        alert('⚠️ الشهادة متاحة فقط للمهارات المعتمدة');
+      }, 2000);
+      return;
+    }
+    
+    if (hours <= 0) {
+      updateFileOverlay('⚠️ تنبيه', 'عدد الساعات يجب أن يكون أكبر من صفر', true);
+      setTimeout(() => {
+        hideFileOverlay(0);
+        alert('⚠️ عدد الساعات يجب أن يكون أكبر من صفر');
+      }, 2000);
+      return;
+    }
+
+    // 4) جمع البيانات الأساسية
+    updateFileOverlay('📝 جمع البيانات...', 'قراءة معلومات المتدرب');
+    
+    const traineeName = currentUser?.name || 'المتدرب';
+    const skillName = skill.name || 'مهارة';
+    const dateText = skill.date || new Date().toLocaleDateString('ar-SA');
+    
+    console.log('📊 بيانات الشهادة:', { traineeName, skillName, hours, dateText });
+
+    // 5) جلب التواقيع مع timeout
+    updateFileOverlay('🔐 جلب التواقيع...', 'الاتصال بالخادم');
+    
+    let hod = '';
+    let deanStd = '';
+    let dean = '';
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 ثواني timeout
+      
+      const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=exportTraineeXlsx&userId=${encodeURIComponent(currentUser.id)}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      const data = await res.json();
+      
+      if (data?.success && data.traineeData) {
+        updateFileOverlay('✅ تم استلام البيانات', 'معالجة التواقيع');
+        
+        const t = data.traineeData;
+        t.major = t.major || t.department || currentUser?.department || '';
+        await resolveSignaturesOnlineStrict(t);
+        
+        hod = t.headOfDepartment || '';
+        deanStd = t.deanOfStudents || '';
+        dean = t.dean || '';
+        
+        console.log('✅ تم جلب التواقيع:', { hod, deanStd, dean });
+      }
+    } catch (e) {
+      console.warn('⚠️ تعذر جلب التواقيع من الخادم:', e.message);
+      // المتابعة بدون توقيعات
+    }
+
+    // 6) رقم تسلسلي
+    const now = new Date();
+    const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const studentKey = (currentUser?.studentId || currentUser?.id || 'USR')
+      .toString()
+      .replace(/\W+/g, '')
+      .slice(-6)
+      .toUpperCase();
+    const skillKey = String(skillId).slice(-4).toUpperCase();
+    const certSerial = `CERT-${studentKey}-${skillKey}-${dateStamp}`;
+
+    // 7) إنشاء الشهادة
+    updateFileOverlay('🎨 إنشاء الشهادة...', 'رسم التصميم');
+    
+    await generateCertificatePDF({
+      traineeName,
+      skillName,
+      hours,
+      dateText,
+      serial: certSerial,
+      signatures: { hod, deanStd, dean }
+    });
+    
+    console.log('✅ تم إنشاء الشهادة بنجاح');
+    
+  } catch (error) {
+    console.error('❌ خطأ في downloadCertificatePDF:', error);
+    updateFileOverlay('⚠️ حدث خطأ', error.message || 'فشل إنشاء الشهادة', true);
+    setTimeout(() => {
+      hideFileOverlay(0);
+      alert('❌ ' + error.message);
+    }, 2000);
+  } finally {
+    spinner?.classList.add('hidden');
+  }
+}
+
+// ✅ ضعها خارج downloadCertificate (كانت متداخلة بالخطأ)
+function viewDepartmentDetails(departmentName){
+  alert('سيتم فتح تفاصيل قسم: ' + departmentName);
+}
+
+
 
 // ---- عند تحميل الصفحة: استعادة الجلسة مع التطبيع ----
 window.onload = function () {
@@ -1770,6 +3636,7 @@ window.onload = function () {
       currentUser.userType = normalizeUserType(currentUser.userType);
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       redirectToDashboard(currentUser.userType);
+      try{ upgradeIcons(); }catch{}
     } catch {
       localStorage.removeItem('currentUser');
     }
@@ -1802,75 +3669,217 @@ async function loadTrainerData() {
 }
 
 // ✅ دالة إظهار تفاصيل الورشة داخل مودال
+
 async function viewWorkshopDetails(workshopId) {
+  if (!currentUser || currentUser.userType !== CONFIG.USER_TYPES.TRAINER) {
+    alert('هذه الشاشة مخصصة للمدرب فقط.');
+    return;
+  }
+
   const modal = document.getElementById('workshopDetailsModal');
   const spinner = document.getElementById('loadingSpinner');
-  const titleEl = document.getElementById('wDetName');
-  const dateEl  = document.getElementById('wDetDate');
-  const locEl   = document.getElementById('wDetLocation');
-  const capEl   = document.getElementById('wDetCapacity');
-  const statEl  = document.getElementById('wDetStatus');
-  const listEl  = document.getElementById('wDetParticipants');
-
-  // فحص وجود عناصر المودال
-  if (!modal || !titleEl || !dateEl || !locEl || !capEl || !statEl || !listEl) {
-    console.error('❌ عناصر مودال تفاصيل الورشة غير موجودة في الصفحة.'); // ← سطر الخطأ المطلوب
-    alert('تعذر فتح تفاصيل الورشة: عناصر المودال غير موجودة.');
-    return;
-  }
-
-  // ابحث عن الورشة محليًا
+  
   const ws = (window.trainerWorkshops || []).find(w => String(w.id) === String(workshopId));
   if (!ws) {
-    console.error('❌ لم يتم العثور على الورشة محليًا:', workshopId); // ← سطر الخطأ
-    alert('تعذر العثور على الورشة محليًا.');
+    alert('تعذر العثور على الورشة.');
     return;
   }
 
-  // املأ الهيدر
-  titleEl.textContent = ws.name;
-  dateEl.textContent  = ws.date || '-';
-  locEl.textContent   = ws.location || '-';
-  capEl.textContent   = `${ws.registered || 0}/${ws.capacity || 0}`;
-  statEl.textContent  = ws.status || '-';
-  statEl.className    = 'workshop-badge ' + ((ws.status === 'نشط' || ws.status === 'متاح') ? 'badge-available' : 'badge-completed');
-
-  // افتح المودال فورًا (سلوك سريع للمستخدم)
+  // ✅ فتح المودال مع بيانات الورشة
+  document.getElementById('wDetName').textContent = ws.name;
+  document.getElementById('wDetDate').textContent = ws.date || '-';
+  document.getElementById('wDetLocation').textContent = ws.location || '-';
+  document.getElementById('wDetCapacity').textContent = `${ws.registered || 0}/${ws.capacity || 0}`;
+  
+  const statusEl = document.getElementById('wDetStatus');
+  statusEl.textContent = ws.status || '-';
+  statusEl.className = 'workshop-badge ' + 
+    ((ws.status === 'نشط' || ws.status === 'متاح') ? 'badge-available' : 'badge-completed');
+  
   modal.classList.add('active');
 
-  // حضّر قائمة مبدئية من "المعلقين" من الكاش المحلي
-  let participants = (window.pendingAttendanceCache || [])
-    .filter(a => String(a.workshopName) === String(ws.name))
-    .map(a => ({ id:a.id, traineeId:a.traineeId, traineeName:a.traineeName, status:'معلق' }));
-
-  // جرّب إن كان لديك أكشن Backend يُرجع التفاصيل الكاملة (معتمد + معلق)
+  // ✅ جلب قائمة المتدربين
   spinner?.classList.remove('hidden');
   try {
     const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=getWorkshopDetails&workshopId=${encodeURIComponent(workshopId)}`;
     const res = await fetch(url);
     const data = await res.json();
 
+    let participants = [];
     if (data?.success && Array.isArray(data.participants)) {
-      // لو وجدنا الأكشن في GAS، استخدمه بدل المبدئي
       participants = data.participants.map(p => ({
         id: p.attendanceId,
         traineeId: p.traineeId,
         traineeName: p.traineeName,
-        status: p.status // معتمد / معلق / ملغي...
+        status: p.status
       }));
-    } else if (data && data.message === 'Invalid action') {
-      // لا يوجد أكشن في GAS؛ لا مشكلة — أبقِ على المبدئي
-      console.log('ℹ️ لا يوجد getWorkshopDetails في GAS — تم استخدام البيانات المحلية.');
     }
+    
+    renderWorkshopParticipants(document.getElementById('wDetParticipants'), participants);
   } catch (e) {
-    console.error('خطأ عند جلب تفاصيل الورشة من GAS:', e); // ← سطر الخطأ
+    console.error('خطأ في جلب تفاصيل الورشة:', e);
+    document.getElementById('wDetParticipants').innerHTML = 
+      '<p style="color:var(--error);">تعذر جلب قائمة المتدربين</p>';
   } finally {
     spinner?.classList.add('hidden');
   }
-
-  // ارسم القائمة
-  renderWorkshopParticipants(listEl, participants);
 }
+
+
+// ===============================================
+// 📤 نظام الشهادات الخارجية
+// ===============================================
+
+function openUploadCertModal() {
+  document.getElementById('uploadCertModal')?.classList.add('active');
+}
+
+function closeUploadCertModal() {
+  document.getElementById('uploadCertModal')?.classList.remove('active');
+  document.getElementById('certCourseName').value = '';
+  document.getElementById('certHours').value = '';
+  document.getElementById('certFile').value = '';
+}
+
+// رفع ملف إلى Google Drive (عبر base64)
+async function uploadFileToGoogleDrive(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve({
+        name: file.name,
+        mimeType: file.type,
+        content: base64
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function submitExternalCert(event) {
+  event.preventDefault();
+  
+  const courseName = document.getElementById('certCourseName').value.trim();
+  const hours = Number(document.getElementById('certHours').value);
+  const fileInput = document.getElementById('certFile');
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    return alert('يرجى اختيار ملف الشهادة');
+  }
+  
+  // التحقق من حجم الملف (5MB)
+  if (file.size > 5242880) {
+    return alert('حجم الملف كبير جداً. الحد الأقصى 5MB');
+  }
+  
+  const spinner = document.getElementById('loadingSpinner');
+  spinner?.classList.remove('hidden');
+  
+  try {
+    showFileOverlay('📤 جاري رفع الشهادة...', 'قد يستغرق بضع ثوانٍ');
+    
+    // تحويل الملف إلى base64
+    const fileData = await uploadFileToGoogleDrive(file);
+    
+    // إرسال البيانات إلى GAS
+    const res = await fetch(CONFIG.GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'submitExternalCertificate',
+        userId: currentUser.id,
+        courseName,
+        hours,
+        fileName: fileData.name,
+        mimeType: fileData.mimeType,
+        fileContent: fileData.content
+      })
+    });
+    
+    const data = await res.json();
+    
+    if (data?.success) {
+      updateFileOverlay('✅ تم الرفع بنجاح', 'سيتم اعتمادها من رئيس القسم');
+      setTimeout(() => hideFileOverlay(0), 2000);
+      
+      closeUploadCertModal();
+      await loadTraineeData(); // إعادة تحميل البيانات
+      alert('✅ تم رفع الشهادة بنجاح!\nسيتم مراجعتها واعتمادها من قبل رئيس القسم.');
+    } else {
+      throw new Error(data?.message || 'فشل رفع الشهادة');
+    }
+  } catch (err) {
+    console.error('خطأ في رفع الشهادة:', err);
+    updateFileOverlay('❌ فشل الرفع', err.message, true);
+    setTimeout(() => hideFileOverlay(0), 3000);
+  } finally {
+    spinner?.classList.add('hidden');
+  }
+}
+
+// جلب وعرض الشهادات الخارجية للمتدرب
+async function loadExternalCerts() {
+  if (!currentUser || currentUser.userType !== CONFIG.USER_TYPES.TRAINEE) return;
+  
+  try {
+    const url = `${CONFIG.GOOGLE_SCRIPT_URL}?action=listExternalCertificates&department=${encodeURIComponent(currentUser.department || '')}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (data?.success) {
+      const myCerts = (data.certificates || []).filter(c => 
+        String(c.userId) === String(currentUser.id)
+      );
+      renderExternalCerts(myCerts);
+    }
+  } catch (e) {
+    console.error('خطأ في جلب الشهادات الخارجية:', e);
+  }
+}
+
+function renderExternalCerts(certs) {
+  const container = document.getElementById('externalCertsList');
+  if (!container) return;
+  
+  if (!certs || !certs.length) {
+    container.innerHTML = '<p style="text-align:center;color:var(--tvtc-text-muted);">لم يتم رفع أي شهادات خارجية بعد.</p>';
+    return;
+  }
+  
+  const rows = certs.map(c => {
+    const badgeClass = c.status === 'معتمد' ? 'badge-completed' : 
+                       c.status === 'مرفوض' ? 'badge-error' : 'badge-pending';
+    
+    return `
+      <tr>
+        <td><strong>${c.courseName}</strong></td>
+        <td>${c.hours} ساعة</td>
+        <td><span class="workshop-badge ${badgeClass}">${c.status}</span></td>
+        <td>
+          ${c.fileUrl ? `<a href="${c.fileUrl}" target="_blank" class="btn btn-outline btn-small">📎 عرض</a>` : '-'}
+        </td>
+      </tr>
+    `;
+  }).join('');
+  
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>اسم الدورة</th><th>الساعات</th><th>الحالة</th><th>الملف</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// تعديل loadTraineeData لتشمل الشهادات الخارجية
+const originalLoadTraineeData = loadTraineeData;
+loadTraineeData = async function() {
+  await originalLoadTraineeData.call(this);
+  await loadExternalCerts();
+};
 
 // رسم جدول/قائمة المشاركين + أزرار اعتماد سريعة
 function renderWorkshopParticipants(containerEl, participants) {
