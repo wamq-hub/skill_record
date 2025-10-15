@@ -6,7 +6,7 @@ const CONFIG = {
 
   // رابط Google Apps Script Web App
   // بعد نشر السكريبت، ضع الرابط هنا
-  GOOGLE_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwCQiSYqcH6M9xTtTH4KYZq6C09TEG3TOq3m8_sWU77HO0pHSjPt9bt_6Qqikrtczefyg/exec',
+  GOOGLE_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwz0ttVWaZFN6FFLSdGVk6LjefPv5-jhT1kzOUhXdUrI80AN6F8Zv50mjzt3SpPGXUyLA/exec',
   
   // معرف Google Spreadsheet
   SPREADSHEET_ID: '1_pSdZAPagzI5qEbspfABCuGNlYy7TwzrS99TqfS8RMo',
@@ -21,6 +21,16 @@ const CONFIG = {
     WORKSHOP_TYPES: 'أنواع_الورش'   // ورقة أنواع الورش المعتمدة
   },
   
+
+    EXTERNAL_CERTS: {
+      MAX_FILE_SIZE: 5242880, // 5MB
+      ALLOWED_EXTENSIONS: ['pdf', 'jpg', 'jpeg', 'png'],
+      STATUS: {
+        PENDING: 'بانتظار الاعتماد',
+        APPROVED: 'معتمد', 
+        REJECTED: 'مرفوض'
+      }
+    },
   // أنواع المستخدمين
   USER_TYPES: {
     TRAINEE: 'متدرب',
@@ -44,6 +54,8 @@ const CONFIG = {
     COMPLETED: 'منتهي',
     CANCELLED: 'ملغي'
   },
+
+  
   
   // قائمة المهارات المعتمدة (21 مهارة)
   SKILLS_LIST: [
@@ -127,6 +139,7 @@ const CONFIG = {
 
 
 };
+
 
 // دوال مساعدة للتحقق من نوع المستخدم
 const UserHelpers = {
