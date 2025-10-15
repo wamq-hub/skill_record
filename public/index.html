@@ -8,37 +8,103 @@
         <script defer src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
         <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
         <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pdfmake-rtl@1.0.0/build/pdfmake-rtl.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
         <script defer src="config.js"></script>
         <script defer src="app.js"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+        
 
     <style>
+
+        /* نص واضح فوق خلفية داكنة/مزدحمة */
+            .on-dark{
+            color:#fff !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,.65);
+            }
+            .on-dark-soft{
+            color:#F1F5F9 !important; /* أبيض مائل للرمادي */
+            text-shadow: 0 1px 2px rgba(0,0,0,.5);
+            }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        :root {
-            --tvtc-primary: #006341;
-            --tvtc-primary-700: #0B5C3F;
-            --tvtc-primary-100: #E6F1EC;
-            --tvtc-secondary: #C8A55C;
-            --tvtc-accent: #00A287;
-            --tvtc-text: #1F2937;
-            --tvtc-text-muted: #6B7280;
-            --border: #E5E7EB;
-            --card: #FFFFFF;
-            --surface: #F7FAF9;
-            --success: #1E7F5C;
-            --warning: #C38E00;
-            --error: #C0392B;
+        :root{
+        --tvtc-primary:#006341;
+        --tvtc-primary-700:#0B5C3F;
+        --tvtc-primary-100:#E6F1EC;
+        --tvtc-secondary:#C8A55C;
+        --tvtc-accent:#00A287;
+
+        --tvtc-text:#1F2937;
+        --tvtc-text-muted:#6B7280;
+
+        --success:#1E7F5C;
+        --warning:#C38E00;
+        --error:#C0392B;
+        --info:#2563EB;
+
+        --border:#E5E7EB;
+        --card:#FFFFFF;
+        --surface:#F7FAF9;
+
+        --tvtc-gradient: linear-gradient(135deg, #006341 0%, #C8A55C 100%);
         }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        
+            /* أزرار منسجمة مع الهوية */
+            .btn { transition: all .2s ease; }
+            .btn-primary{
+            background: var(--tvtc-primary);
+            color:#fff;
+            }
+            .btn-primary:hover{ background: var(--tvtc-primary-700); }
+            .btn-outline{
+            background:#fff; color:var(--tvtc-primary); border:2px solid var(--tvtc-primary);
+            }
+            .btn-outline:hover{ background: var(--tvtc-primary-100); }
+            .btn-accent{ background: var(--tvtc-accent); color:#fff; }
+            .btn:focus-visible{ outline:3px solid var(--tvtc-primary-100); outline-offset:2px; }
+
+            /* رؤوس ومناطق إبراز بالـ Gradient */
+            .login-container{ background: var(--tvtc-gradient); }
+            .header{ background: var(--tvtc-primary); }
+            .section-title{ color: var(--tvtc-primary); }
+
+            /* بطاقات/خلفيات */
+            body{ background: var(--surface); color: var(--tvtc-text); }
+            .workshop-card{ background: var(--card); border-right:5px solid var(--tvtc-primary); }
+
+            /* شارات الحالات (Badges) منسجمة */
+            .workshop-badge{ padding:6px 12px; border-radius: 999px; font-weight:700; font-size:12px; }
+            .badge-available{ background:#D1FAE5; color: var(--success); }
+            .badge-completed{ background:#E6E7FF; color:#4F46E5; } /* (ابقينا الأزرق الثانوي لقابلية التفريق) */
+            .badge-pending{ background:#FEF3C7; color: var(--warning); }
+            .badge-error{ background:#FEE2E2; color:#B91C1C; }
+
+            /* تفاصيل/قوائم */
+            th{ background: var(--tvtc-primary-100); color:var(--tvtc-primary); }
+            tr:hover{ background: var(--surface); }
+
+            /* أيقونات SVG (نفس حجم النص، تلّون بالـ currentColor) */
+            .i{ width:1.1em; height:1.1em; vertical-align:-0.15em; }
+            .with-icon{ display:inline-flex; align-items:center; gap:.5ch; }
+
+            body {
+            font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--surface);
             color: var(--tvtc-text);
         }
+
 
         .hidden {
             display: none !important;
@@ -505,11 +571,198 @@
 
         .badge-error { background:#fee2e2; color:#b91c1c; }
 
+        /* ✨ Overlay التحميل المحسّن */
         .file-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.35);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 99999; backdrop-filter: blur(1.5px);
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            transition: opacity 0.3s ease;
+        }
+
+        .file-overlay.hidden {
+            display: none;
+            opacity: 0;
+        }
+
+        .file-box {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 24px;
+            padding: 40px 32px;
+            width: min(92vw, 480px);
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.3),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+            text-align: center;
+            direction: rtl;
+            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
             }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* أيقونة متحركة */
+        .file-icon-wrapper {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+        }
+
+        .file-icon {
+            font-size: 48px;
+            animation: bounce 2s ease-in-out infinite;
+            display: inline-block;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* دائرة الدوران */
+        .file-spinner {
+            position: absolute;
+            inset: 0;
+            width: 80px;
+            height: 80px;
+            border: 4px solid transparent;
+            border-top-color: var(--tvtc-primary, #006341);
+            border-right-color: var(--tvtc-accent, #00A287);
+            border-radius: 50%;
+            animation: spin 1.5s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* النصوص */
+        .file-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .file-msg {
+            font-size: 15px;
+            color: #6b7280;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        /* شريط التقدم */
+        .file-progress {
+            width: 100%;
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .file-progress-bar {
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                var(--tvtc-primary, #006341) 0%,
+                var(--tvtc-accent, #00A287) 50%,
+                var(--tvtc-secondary, #C8A55C) 100%
+            );
+            background-size: 200% 100%;
+            border-radius: 10px;
+            animation: progressMove 2s ease-in-out infinite;
+        }
+
+        @keyframes progressMove {
+            0% {
+                width: 0%;
+                background-position: 0% 50%;
+            }
+            50% {
+                width: 70%;
+                background-position: 100% 50%;
+            }
+            100% {
+                width: 100%;
+                background-position: 200% 50%;
+            }
+        }
+
+        /* حالة الخطأ */
+        .file-overlay.error-state .file-box {
+            background: linear-gradient(135deg, #fee2e2 0%, #fef2f2 100%);
+            border: 2px solid #fca5a5;
+        }
+
+        .file-overlay.error-state .file-icon {
+            animation: shake 0.5s ease-in-out;
+        }
+
+        .file-overlay.error-state .file-spinner {
+            border-top-color: #dc2626;
+            border-right-color: #ef4444;
+        }
+
+        .file-overlay.error-state .file-title {
+            color: #991b1b;
+        }
+
+        .file-overlay.error-state .file-progress-bar {
+            background: linear-gradient(90deg, #dc2626, #ef4444, #f87171);
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        /* تحسين المظهر على الشاشات الصغيرة */
+        @media (max-width: 480px) {
+            .file-box {
+                padding: 32px 24px;
+            }
+            
+            .file-title {
+                font-size: 18px;
+            }
+            
+            .file-msg {
+                font-size: 14px;
+            }
+            
+            .file-icon-wrapper {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .file-icon {
+                font-size: 36px;
+            }
+            
+            .file-spinner {
+                width: 60px;
+                height: 60px;
+            }
+        }
             .file-overlay.hidden { display: none; }
             .file-box {
             background: #fff; border-radius: 16px; padding: 22px 26px; width: min(92vw, 420px);
@@ -525,10 +778,284 @@
             .file-sub { font-size: 13px; color: #6b7280; }
 
 
+                        /* ===== تصميم بطاقات الاعتماد ===== */
+            .workshops-approval-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            }
+
+            .workshop-approval-card {
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            }
+
+            .workshop-approval-card:hover {
+            border-color: var(--tvtc-primary);
+            box-shadow: 0 4px 12px rgba(24, 111, 101, 0.1);
+            }
+
+            .workshop-header {
+            background: linear-gradient(135deg, #186F65 0%, #1a8074 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            }
+
+            .workshop-header h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            }
+
+            .workshop-actions-header {
+            padding: 16px 20px;
+            background: #f8f9fa;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            }
+
+            .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            user-select: none;
+            }
+
+            .checkbox-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            }
+
+            .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            }
+
+            .trainees-table {
+            width: 100%;
+            border-collapse: collapse;
+            }
+
+            .trainees-table thead {
+            background: #f8f9fa;
+            }
+
+            .trainees-table th {
+            padding: 12px;
+            text-align: right;
+            font-weight: 600;
+            color: var(--tvtc-text);
+            border-bottom: 2px solid var(--border);
+            }
+
+            .trainees-table tbody tr {
+            transition: background 0.2s ease;
+            }
+
+            .trainees-table tbody tr:hover {
+            background: #f8f9fa;
+            }
+
+            .trainees-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            }
+
+            .trainees-table input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            }
+
+            /* ===== تحسينات responsive ===== */
+            @media (max-width: 768px) {
+            .workshop-actions-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .action-buttons {
+                width: 100%;
+            }
+            
+            .action-buttons button {
+                flex: 1;
+            }
+            
+            .trainees-table {
+                font-size: 14px;
+            }
+            
+            .trainees-table th,
+            .trainees-table td {
+                padding: 8px;
+            }
+            }
+
+            /* أزرار الاعتماد الجماعي */
+            .bulk-actions-panel {
+                background: linear-gradient(135deg, var(--tvtc-primary-100) 0%, #fff 100%);
+                border: 2px solid var(--tvtc-primary);
+                border-radius: 12px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+
+            .bulk-actions-title {
+                color: var(--tvtc-primary);
+                font-weight: bold;
+                margin-bottom: 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .attendance-checkbox {
+                cursor: pointer;
+                width: 18px;
+                height: 18px;
+            }
+
+            #selectAllAttendance {
+                cursor: pointer;
+                width: 18px;
+                height: 18px;
+            }
+
+            /* تحسين أزرار الإجراءات */
+            .btn-small:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .action-buttons-group {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            /* رسائل التأكيد */
+            .confirmation-badge {
+                display: inline-block;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: 600;
+                margin-right: 5px;
+            }
+
+            .confirmation-badge.success {
+                background: #d1fae5;
+                color: var(--success);
+            }
+
+            .confirmation-badge.warning {
+                background: #fef3c7;
+                color: var(--warning);
+            }
+
+            .confirmation-badge.error {
+                background: #fee2e2;
+                color: var(--error);
+            }
+
+            /* ====== طباعة TVTC A4 RTL سليمة ====== */
+            @media print{
+            @page{ size: A4 portrait; margin: 12mm; }
+
+            body{ background:#fff !important; }
+            .print-container{
+                width: 190mm; /* أقل من عرض A4 بعد الهوامش */
+                margin: 0 auto;
+            }
+
+            /* أخفِ عناصر الواجهة غير المرغوبة عند الطباعة */
+            .no-print, header, nav, .app-toolbar, .footer, .controls{ display:none !important; }
+
+            /* خلفيات/بطاقات بدون ظلال عند الطباعة */
+            .card, .table-wrap{ box-shadow:none !important; border:1px solid var(--border); }
+
+            /* الفكرة الذهبية:
+                - الحاوية RTL للنصوص العربية
+                - الجدول نفسه LTR حتى لا ينعكس ترتيب الأعمدة */
+            .rtl{ direction: rtl; }
+
+            table.export-table{
+                direction: ltr;
+                border-collapse: collapse;
+                width:100%;
+            }
+            table.export-table th, 
+            table.export-table td{
+                text-align: right;    /* نرجّع المحاذاة لليمين يدويًا */
+                border: 1px solid var(--border);
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+            table.export-table thead th{
+                background: var(--tvtc-primary-100);
+                color: var(--tvtc-primary);
+                font-weight:700;
+            }
+
+            /* منع تقطيع الجدول بين الصفحات */
+            table, thead, tbody, tr, td, th{ page-break-inside: avoid !important; }
+
+            /* تثبيت عرض الأعمدة (اختياري لكنه مفيد للاستقرار) */
+            .export-table th:nth-child(1){ width: 8%; }   /* # */
+            .export-table th:nth-child(2){ width: 40%; }  /* اسم المهارة */
+            .export-table th:nth-child(3){ width: 15%; }  /* الساعات */
+            .export-table th:nth-child(4){ width: 20%; }  /* التاريخ */
+            .export-table th:nth-child(5){ width: 17%; }  /* الحالة */
+            }
+
+
     </style>
 </head>
 <body>
 
+        <!-- Sprite أيقونات احترافية (TVTC set) -->
+        <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+        <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M12 7v5l3 2"></path>
+        </symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+            <path d="M16 2v4M8 2v4M3 10h18"></path>
+        </symbol>
+        <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"></path>
+            <path d="M15 6v15"></path>
+            <path d="M9 3v15"></path>
+        </symbol>
+        <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </symbol>
+        <symbol id="i-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 21h8M12 17v4"></path>
+            <path d="M7 4h10v5a5 5 0 1 1-10 0V4z"></path>
+            <path d="M5 6H3a2 2 0 0 0 2 2"></path>
+            <path d="M19 6h2a2 2 0 0 1-2 2"></path>
+        </symbol>
+        </svg>
 
 
     <!-- Loading -->
@@ -585,58 +1112,193 @@
             
             <h2 class="section-title">📋 الورش المتاحة للتسجيل</h2>
             <div class="workshops-grid" id="availableWorkshops"></div>
-
-            <h2 class="section-title" style="margin-top: 40px;">🏆 سجل مهاراتي الشخصية</h2>
+            <h2 class="section-title" style="margin-top: 40px;">📤 رفع شهادة خارجية</h2>
             <div class="table-container">
-                <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-                    <h3 style="color: var(--tvtc-primary);">المهارات المكتسبة</h3>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-primary btn-small" onclick="exportTraineeExcel()">
-                            <span>📊</span>
-                            <span>تصدير Excel</span>
-                        </button>
-                    </div>
+                <div style="margin-bottom: 20px;">
+                    <button class="btn btn-accent" onclick="openUploadCertModal()">
+                        ➕ رفع شهادة جديدة
+                    </button>
                 </div>
-                <div id="traineeSkillsTable"></div>
+                <div id="externalCertsList"></div>
             </div>
+                <h2 class="section-title" style="margin-top: 40px;">🏆 سجل مهاراتي الشخصية</h2>
+                <div class="table-container">
+                    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="color: var(--tvtc-primary);">المهارات المكتسبة</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <!-- ✅ زر PDF (محمي) -->
+                            <button class="btn btn-accent btn-small" onclick="exportTraineePDF()">
+                                <span>📄</span>
+                                <span>تصدير PDF</span>
+                            </button>
+                            
+                            <!-- زر Excel -->
+                            <button class="btn btn-primary btn-small" onclick="exportTraineeExcel()">
+                                <span>📊</span>
+                                <span>تصدير Excel</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="traineeSkillsTable"></div>
+                </div>
         </div>
     </div>
 
-    <!-- لوحة تحكم المدرب -->
-    <div id="trainerPage" class="hidden">
-        <div class="header">
-            <div class="header-content">
-                <div class="header-title">
-                    <div class="header-icon">👨‍🏫</div>
-                    <div class="header-text">
-                        <h1>لوحة تحكم المدرب</h1>
-                        <p id="trainerInfo"></p>
-                    </div>
+<!-- لوحة تحكم المدرب -->
+<div id="trainerPage" class="hidden">
+    <div class="header">
+        <div class="header-content">
+            <div class="header-title">
+                <div class="header-icon">👨‍🏫</div>
+                <div class="header-text">
+                    <h1>لوحة تحكم المدرب</h1>
+                    <p id="trainerInfo"></p>
                 </div>
-                <button class="btn-logout" onclick="logout()">
-                    <span>←</span>
-                    <span>تسجيل خروج</span>
-                </button>
             </div>
+            <button class="btn-logout" onclick="logout()">
+                <span>←</span>
+                <span>تسجيل خروج</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- الإحصائيات -->
+        <div class="stats-grid" id="trainerStats"></div>
+
+        <!-- زر إضافة ورشة جديدة -->
+        <div style="margin: 30px 0;">
+            <button class="btn btn-primary" onclick="openAddWorkshopModal()" 
+                    style="padding: 12px 24px; font-size: 16px;">
+                <span>➕</span>
+                <span>إضافة ورشة جديدة</span>
+            </button>
         </div>
 
-        <div class="dashboard">
-            <div class="stats-grid" id="trainerStats"></div>
-            
-            <div style="margin-bottom: 30px;">
-                <button class="btn btn-primary" onclick="openAddWorkshopModal()" style="padding: 12px 24px; font-size: 16px;">
-                    <span>➕</span>
-                    <span>إضافة ورشة جديدة</span>
-                </button>
+        <!-- جدول ورشي التدريبية -->
+        <div class="dashboard-section">
+            <div class="section-header">
+                <h2>📚 ورشي التدريبية</h2>
+                <p style="color:var(--tvtc-text-muted); font-size:14px; margin:8px 0 0 0;">
+                    جميع الورش التي قمت بإنشائها (النشطة والمنتهية)
+                </p>
             </div>
-
-            <h2 class="section-title">📋 ورشي التدريبية</h2>
             <div class="table-container" id="trainerWorkshops"></div>
+        </div>
 
-            <h2 class="section-title" style="margin-top: 40px;">✅ اعتماد حضور المتدربين</h2>
-            <div class="table-container" id="pendingAttendance"></div>
+        <!-- اعتماد حضور المتدربين -->
+        <div class="dashboard-section">
+            <div class="section-header">
+                <h2>✅ اعتماد حضور المتدربين</h2>
+                <p style="color:var(--tvtc-text-muted); font-size:14px; margin:8px 0 0 0;">
+                    حدد المتدربين الذين حضروا في كل ورشة واعتمد حضورهم
+                </p>
+            </div>
+            <div id="pendingAttendance"></div>
         </div>
     </div>
+</div>
+
+<!-- Modal: إضافة ورشة جديدة -->
+<div id="addWorkshopModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>➕ إضافة ورشة تدريبية جديدة</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <form onsubmit="submitWorkshop(event)" class="modal-form">
+            <div class="form-group">
+                <label for="workshopName" class="required">اسم الورشة</label>
+                <select id="workshopName" class="input" required>
+                    <option value="">-- اختر من القائمة --</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="workshopDate" class="required">تاريخ الورشة</label>
+                    <input type="date" id="workshopDate" class="input" required>
+                </div>
+                <div class="form-group">
+                    <label for="workshopTime" class="required">وقت الورشة</label>
+                    <input type="time" id="workshopTime" class="input" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="workshopLocation" class="required">مكان الورشة</label>
+                <input type="text" id="workshopLocation" class="input" 
+                       placeholder="مثال: قاعة 101" required>
+            </div>
+
+            <div class="form-group">
+                <label for="workshopCapacity" class="required">عدد المقاعد</label>
+                <input type="number" id="workshopCapacity" class="input" 
+                       min="1" max="100" placeholder="مثال: 30" required>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">
+                    <span>✅</span>
+                    <span>نشر الورشة</span>
+                </button>
+                <button type="button" class="btn btn-outline" onclick="closeModal()">
+                    <span>إلغاء</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: تفاصيل الورشة -->
+<div id="workshopDetailsModal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <h2>📋 تفاصيل الورشة</h2>
+            <button class="modal-close" onclick="closeWorkshopDetailsModal()">✕</button>
+        </div>
+        
+        <div class="modal-body">
+            <!-- معلومات الورشة -->
+            <div class="workshop-details-grid">
+                <div class="detail-item">
+                    <span class="detail-label">📚 اسم الورشة:</span>
+                    <span class="detail-value" id="wDetName">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">📅 التاريخ:</span>
+                    <span class="detail-value" id="wDetDate">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">📍 المكان:</span>
+                    <span class="detail-value" id="wDetLocation">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">👥 المسجلين:</span>
+                    <span class="detail-value" id="wDetCapacity">-</span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">⚡ الحالة:</span>
+                    <span id="wDetStatus" class="workshop-badge">-</span>
+                </div>
+            </div>
+
+            <!-- قائمة المتدربين -->
+            <div style="margin-top: 24px;">
+                <h3 style="margin-bottom: 16px; color: var(--tvtc-primary);">
+                    👥 قائمة المتدربين المسجلين
+                </h3>
+                <div id="wDetParticipants"></div>
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeWorkshopDetailsModal()">
+                إغلاق
+            </button>
+        </div>
+    </div>
+</div>
 
     <!-- لوحة تحكم رئيس القسم -->
     <div id="headPage" class="hidden">
@@ -666,7 +1328,9 @@
                 </div>
                 <div id="departmentReports"></div>
             </div>
-
+            <!-- داخل headPage بعد topTrainees -->
+            <h2 class="section-title" style="margin-top: 40px;">📋 اعتماد الشهادات الخارجية</h2>
+            <div class="table-container" id="pendingExternalCerts"></div>
             <h2 class="section-title" style="margin-top: 40px;">🏆 أفضل المتدربين بالقسم</h2>
             <div class="workshops-grid" id="topTrainees"></div>
         </div>
@@ -767,19 +1431,69 @@
             <div id="wDetParticipants"></div>
         </div>
         </div>
+        <!-- Modal رفع شهادة خارجية -->
+<div id="uploadCertModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">رفع شهادة خارجية</h2>
+            <button class="btn-close" onclick="closeUploadCertModal()">&times;</button>
+        </div>
+
+        <form onsubmit="submitExternalCert(event)">
+            <div class="input-group">
+                <label>اسم الدورة أو المهارة</label>
+                <input type="text" id="certCourseName" placeholder="مثال: إدارة المشاريع الاحترافية" required>
+            </div>
+
+            <div class="input-group">
+                <label>عدد الساعات</label>
+                <input type="number" id="certHours" min="1" max="100" placeholder="8" required>
+            </div>
+
+            <div class="input-group">
+                <label>رفع ملف الشهادة (PDF, JPG, PNG - حد أقصى 5MB)</label>
+                <input type="file" id="certFile" accept=".pdf,.jpg,.jpeg,.png" required>
+                <div style="font-size: 13px; color: var(--tvtc-text-muted); margin-top: 5px;">
+                    📎 يرجى رفع صورة واضحة أو ملف PDF للشهادة
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 25px;">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">رفع الشهادة</button>
+                <button type="button" class="btn btn-outline" style="flex: 1;" onclick="closeUploadCertModal()">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
 
     <section style="margin-top:18px;">
         <h3 class="section-title">مسار تتبّع الورش</h3>
         <div id="traineeTrack"></div>
     </section>
-<!-- Overlay تحميل ملف Excel -->
+
+<!-- ✨ Overlay تحميل ملف Excel المحسّن -->
 <div id="fileDownloadOverlay" class="file-overlay hidden" aria-live="polite" aria-busy="true">
   <div class="file-box">
-    <div class="file-spinner"></div>
-    <div id="fileOverlayMsg" class="file-msg">جاري تجهيز الملف...</div>
-    <div class="file-sub">يرجى الانتظار حتى يكتمل التنزيل.</div>
+    <!-- أيقونة متحركة -->
+    <div class="file-icon-wrapper">
+      <div class="file-icon">📊</div>
+      <div class="file-spinner"></div>
+    </div>
+    
+    <!-- العنوان الرئيسي -->
+    <div id="fileOverlayTitle" class="file-title">جاري تجهيز الملف...</div>
+    
+    <!-- الرسالة الفرعية -->
+    <div id="fileOverlayMsg" class="file-msg">يرجى الانتظار حتى يكتمل التحميل</div>
+    
+    <!-- شريط تقدم بصري -->
+    <div class="file-progress">
+      <div class="file-progress-bar"></div>
+    </div>
   </div>
 </div>
+<!-- حاوية تصدير PDF (ننشّطها وقت الطباعة) -->
+<div id="skillsExport" class="print-container rtl" style="display:none;"></div>
 
 </body>
 </html>
